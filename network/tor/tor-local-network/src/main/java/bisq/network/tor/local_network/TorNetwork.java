@@ -28,6 +28,7 @@ import bisq.network.tor.process.LdPreload;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Map;
@@ -118,13 +119,15 @@ public class TorNetwork {
 
     private void createDataDirIfNotPresent(Path nodeDataDirPath) {
         File nodeDataDirFile = nodeDataDirPath.toFile();
-        if (nodeDataDirFile.exists()) {
+        if (Files.exists(nodeDataDirPath)) {
             return;
         }
 
-        boolean isSuccess = nodeDataDirPath.toFile().mkdir();
-        if (!isSuccess) {
-            throw new IllegalStateException("Couldn't create data directory: " + nodeDataDirPath.toAbsolutePath());
+        try {
+            Files.createDirectory(nodeDataDirPath);
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Couldn't create data directory: " + nodeDataDirPath.toAbsolutePath(), e);
         }
     }
 
@@ -192,7 +195,7 @@ public class TorNetwork {
     }
 
     private void generateTorrc(TorNode torNode, Map<String, String> torrcConfigs, Set<TorNode> allDAs) {
-        if (torNode.getTorrcPath().toFile().exists()) {
+        if (Files.exists(torNode.getTorrcPath())) {
             return;
         }
 

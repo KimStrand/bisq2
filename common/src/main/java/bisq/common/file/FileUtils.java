@@ -68,28 +68,35 @@ public class FileUtils {
         write(fileName, data.getBytes(Charsets.UTF_8));
     }
 
+    public static void write(Path path, String data) throws IOException {
+        write(path.toAbsolutePath().toString(), data);
+    }
+
     public static void write(String fileName, byte[] data) throws IOException {
         try (FileOutputStream outputStream = new FileOutputStream(fileName)) {
             outputStream.write(data);
         }
     }
 
+    public static void write(Path path, byte[] data) throws IOException {
+        write(path.toAbsolutePath().toString(), data);
+    }
+
     public static byte[] read(String fileName) throws IOException {
         return Files.readAllBytes(Paths.get(fileName));
     }
 
-    public static byte[] read(File file) throws IOException {
-        return Files.readAllBytes(file.toPath());
+    public static byte[] read(Path file) throws IOException {
+        return Files.readAllBytes(file);
     }
 
     public static String readAsString(String fileName) throws IOException {
         return new String(read(fileName), Charsets.UTF_8);
     }
 
-    public static String readAsString(File file) throws IOException {
+    public static String readAsString(Path file) throws IOException {
         return new String(read(file), Charsets.UTF_8);
     }
-
 
     /**
      * The `File.deleteOnExit` method is not suited for long-running processes as it never removes the added files,
@@ -100,10 +107,14 @@ public class FileUtils {
      *
      * @param file The file to add a shutdown hook for delete on exit
      */
-    public static void deleteOnExit(File file) {
+    private static void deleteOnExit(File file) {
         if (!DeleteOnExitHook.isShutdownInProgress()) {
             DeleteOnExitHook.add(file.getPath());
         }
+    }
+
+    public static void deleteOnExit(Path path) {
+        deleteOnExit(path.toFile());
     }
 
     /**
@@ -146,6 +157,10 @@ public class FileUtils {
         return Files.deleteIfExists(file.toPath());
     }
 
+    public static boolean deleteFile(Path path) throws IOException {
+        return deleteFile(path.toFile());
+    }
+
     /**
      * <b>Blocking</b>; delete file and wait until it no longer exists, polling every 50ms.
      *
@@ -162,6 +177,10 @@ public class FileUtils {
         }
     }
 
+    public static void deleteFileAndWait(Path path, long timeoutMillis) throws IOException, InterruptedException {
+        deleteFileAndWait(path.toFile(), timeoutMillis);
+    }
+
     /**
      * <b>Blocking</b>; Waits until the specified file exists, polling every 100ms up to the given timeout.
      *
@@ -176,6 +195,11 @@ public class FileUtils {
             }
             Thread.sleep(100);
         }
+    }
+
+    public static void waitUntilFileExists(Path path,
+                                           long timeoutMillis) throws InterruptedException, TimeoutException {
+        waitUntilFileExists(path.toFile(), timeoutMillis);
     }
 
     public static void makeDirIfNotExists(File dir) throws IOException {
@@ -271,7 +295,11 @@ public class FileUtils {
         }
     }
 
-    public static Optional<String> readFromFileIfPresent(File file) {
+    public static void writeToFile(String string, Path path) throws IOException {
+        writeToFile(string, path.toFile());
+    }
+
+    private static Optional<String> readFromFileIfPresent(File file) {
         try {
             return Optional.of(readStringFromFile(file));
         } catch (IOException e) {
@@ -279,10 +307,18 @@ public class FileUtils {
         }
     }
 
+    public static Optional<String> readFromFileIfPresent(Path file) {
+        return readFromFileIfPresent(file.toFile());
+    }
+
     public static String readStringFromFile(File file) throws IOException {
         try (Scanner scanner = new Scanner(file)) {
             return readFromScanner(scanner);
         }
+    }
+
+    public static String readStringFromFile(Path path) throws IOException {
+        return readStringFromFile(path.toFile());
     }
 
     public static String readStringFromResource(String resourceName) throws IOException {
@@ -320,6 +356,10 @@ public class FileUtils {
         }
     }
 
+    public static void resourceToFile(String resourceName, Path outputFile) throws IOException {
+        resourceToFile(resourceName, outputFile.toFile());
+    }
+
     public static void copyFile(File source, File destination) throws IOException {
         try (InputStream inputStream = new FileInputStream(source);
              OutputStream outputStream = new FileOutputStream(destination)) {
@@ -329,6 +369,10 @@ public class FileUtils {
                 outputStream.write(buffer, 0, bytesRead);
             }
         }
+    }
+
+    public static void copyFile(Path source, Path destination) throws IOException {
+        copyFile(source.toFile(), destination.toFile());
     }
 
     public static void appendFromResource(PrintWriter printWriter, String pathname) {
@@ -417,7 +461,7 @@ public class FileUtils {
         return file;
     }
 
-    public static boolean renameFile(File oldFile, File newFile) throws IOException {
+    private static boolean renameFile(File oldFile, File newFile) throws IOException {
         File target = newFile;
         if (OS.isWindows()) {
             // Work around an issue on Windows whereby you can't rename over existing files.
@@ -430,6 +474,10 @@ public class FileUtils {
         return oldFile.renameTo(target);
     }
 
+    public static boolean renameFile(Path oldPath, Path newPath) throws IOException {
+        return renameFile(oldPath.toFile(), newPath.toFile());
+    }
+
     public static void backupCorruptedFile(String directory, File storageFile, String fileName, String backupFolderName)
             throws IOException {
         if (storageFile.exists()) {
@@ -440,6 +488,13 @@ public class FileUtils {
             File target = new File(Paths.get(directory, backupFolderName, newFileName).toString());
             renameFile(storageFile, target);
         }
+    }
+
+    public static void backupCorruptedFile(String directory,
+                                           Path storageFilePath,
+                                           String fileName,
+                                           String backupFolderName) throws IOException {
+        backupCorruptedFile(directory, storageFilePath.toFile(), fileName, backupFolderName);
     }
 
     public static HttpURLConnection downloadFile(URL url,
@@ -470,6 +525,12 @@ public class FileUtils {
             connection.disconnect();
         }
         return connection;
+    }
+
+    public static HttpURLConnection downloadFile(URL url,
+                                                 Path destination,
+                                                 Observable<Double> progress) throws IOException {
+        return downloadFile(url, destination.toFile(), progress);
     }
 
     public static boolean hasResourceFile(String fileName) {

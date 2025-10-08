@@ -83,7 +83,6 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.FileSystem;
@@ -973,7 +972,7 @@ public abstract class Overlay<T extends Overlay<T>> {
 
     private void addReportErrorButtons() {
         Button logButton = new Button(Res.get("popup.reportError.log"));
-        logButton.setOnAction(event -> PlatformUtils.open(new File(baseDir, "bisq.log")));
+        logButton.setOnAction(event -> PlatformUtils.open(Path.of(baseDir, "bisq.log")));
 
         Button zipLogButton = new Button(Res.get("popup.reportError.zipLogs"));
         zipLogButton.setOnAction(event -> FileChooserUtil.chooseDirectory(getRootContainer().getScene(), baseDir, "")
@@ -981,29 +980,27 @@ public abstract class Overlay<T extends Overlay<T>> {
                     // Copy debug log file and replace users home directory with "<HOME_DIR>" to avoid that
                     // private data gets leaked in case the user used their real name as their OS user.
                     Path debugLogPath = Path.of(baseDir + "/tor/").resolve("debug.log");
-                    File debugLogForZipFile = Path.of(baseDir + "/tor/").resolve("debug_for_zip.log").toFile();
+                    Path debugLogForZipPath = Path.of(baseDir + "/tor/").resolve("debug_for_zip.log");
                     try {
-                        if (debugLogForZipFile.exists()) {
-                            debugLogForZipFile.delete();
-                        }
-                        FileUtils.copyFile(debugLogPath.toFile(), debugLogForZipFile);
-                        String logContent = FileUtils.readAsString(debugLogForZipFile.getAbsolutePath());
+                        Files.deleteIfExists(debugLogForZipPath);
+                        FileUtils.copyFile(debugLogPath, debugLogForZipPath);
+                        String logContent = FileUtils.readAsString(debugLogForZipPath);
                         logContent = StringUtils.maskHomeDirectory(logContent);
-                        FileUtils.writeToFile(logContent, debugLogForZipFile);
+                        FileUtils.writeToFile(logContent, debugLogForZipPath);
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
-                    String zipDirectory = directory.getAbsolutePath();
+                    String zipDirectory = directory.toAbsolutePath().toString();
                     URI uri = URI.create("jar:file:" + Paths.get(zipDirectory, "bisq2-logs.zip").toUri().getRawPath());
                     Map<String, String> env = Map.of("create", "true");
                     List<Path> logPaths = Arrays.asList(
                             Path.of(baseDir).resolve("bisq.log"),
-                            debugLogForZipFile.toPath());
+                            debugLogForZipPath);
                     try (FileSystem zipFileSystem = FileSystems.newFileSystem(uri, env)) {
                         logPaths.forEach(logPath -> {
-                            if (logPath.toFile().isFile()) {
+                            if (Files.isRegularFile(logPath)) {
                                 try {
-                                    Files.copy(logPath, zipFileSystem.getPath(logPath.toFile().getName()), StandardCopyOption.REPLACE_EXISTING);
+                                    Files.copy(logPath, zipFileSystem.getPath(logPath.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
                                 } catch (IOException e) {
                                     throw new RuntimeException(e);
                                 }

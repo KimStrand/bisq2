@@ -26,14 +26,13 @@ import bisq.evolution.updater.DownloadedFilesVerification;
 import bisq.evolution.updater.UpdaterUtils;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
 
@@ -79,21 +78,23 @@ public class DesktopAppLauncher {
         }
     }
 
-    private final String updatesDir, jarPath, jarFileName;
+    private final Path updatesDirPath, jarPath;
+    private final String jarFileName;
 
     private DesktopAppLauncher(String[] args) throws Exception {
         options = new Options(args);
         String appName = options.getAppName().orElse(DesktopAppLauncher.APP_NAME);
-        String appDataDir = PlatformUtils.getUserDataDir().resolve(appName).toAbsolutePath().toString();
-        LogSetup.setup(Paths.get(appDataDir, "bisq").toString());
-        String version = UpdaterUtils.readVersionFromVersionFile(appDataDir)
+        Path appDataDir = PlatformUtils.getUserDataDir().resolve(appName);
+        LogSetup.setup(appDataDir.resolve("bisq").toString());
+        String version = UpdaterUtils.readVersionFromVersionFile(appDataDir.toString())
                 .or(options::getVersion)
                 .orElse(BuildVersion.VERSION);
-        updatesDir = appDataDir + File.separator + UPDATES_DIR + File.separator + version;
-        jarFileName = UpdaterUtils.getJarFileName(version);
-        jarPath = updatesDir + File.separator + jarFileName;
 
-        if (new File(jarPath).exists()) {
+        updatesDirPath = appDataDir.resolve(UPDATES_DIR).resolve(version);
+        jarFileName = UpdaterUtils.getJarFileName(version);
+        jarPath = updatesDirPath.resolve(jarFileName);
+
+        if (Files.exists(jarPath)) {
             boolean ignoreSignatureVerification = options.getValueAsBoolean("ignoreSignatureVerification").orElse(false);
             if (ignoreSignatureVerification) {
                 log.warn("Signature verification is disabled by the provided program argument. This is not recommended and should be done only if the user can ensure that the jar file is trusted.");
@@ -102,7 +103,7 @@ public class DesktopAppLauncher {
             }
             invokeJar();
         } else {
-            Optional<String> fromVersionFile = readVersionFromVersionFile(appDataDir);
+            Optional<String> fromVersionFile = readVersionFromVersionFile(appDataDir.toString());
             if (fromVersionFile.isPresent() && !fromVersionFile.get().equals(BuildVersion.VERSION)) {
                 Optional<String> versionFromArgs = options.getValue("version");
                 log.warn("We found a version file with version {} but it does not match our version. versionFromArgs={}; DesktopAppLauncher.VERSION={}; ",
@@ -118,11 +119,11 @@ public class DesktopAppLauncher {
         List<String> keyList = options.getValue("keyIds")
                 .map(keyIds -> List.of(keyIds.split(",")))
                 .orElse(KEY_IDS);
-        DownloadedFilesVerification.verify(updatesDir, jarFileName, keyList, ignoreSigningKeyInResourcesCheck);
+        DownloadedFilesVerification.verify(updatesDirPath.toString(), jarFileName, keyList, ignoreSigningKeyInResourcesCheck);
     }
 
     private void invokeJar() throws IOException, ClassNotFoundException, NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-        URL url = Path.of(jarPath).toUri().toURL();
+        URL url = jarPath.toUri().toURL();
         URLClassLoader classLoader = new URLClassLoader(new URL[]{url}, DesktopAppLauncher.class.getClassLoader().getParent());
         // Need to set contextClassLoader to load class from jar file
         Thread.currentThread().setContextClassLoader(classLoader);

@@ -152,7 +152,7 @@ public abstract class ApplicationService implements Service {
                 ? Path.of(rootConfig.getString("application.baseDir"))
                 : userDataDir.resolve(appName);
         try {
-            FileUtils.makeDirs(baseDir.toFile());
+            FileUtils.makeDirs(baseDir);
         } catch (IOException e) {
             log.error("Could not create data directory {}", baseDir, e);
             throw new RuntimeException(e);

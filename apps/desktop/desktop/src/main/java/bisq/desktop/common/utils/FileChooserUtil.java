@@ -26,7 +26,8 @@ import javafx.stage.FileChooser;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
-import java.nio.file.Paths;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Optional;
 
 @Slf4j
@@ -35,55 +36,55 @@ public class FileChooserUtil {
     private static final boolean IS_DIRECTORY_CHOOSER = true;
     private static final boolean IS_FILE_CHOOSER = false;
 
-    public static Optional<File> openFile(Scene scene) {
+    public static Optional<Path> openFile(Scene scene) {
         return openFile(scene, Optional.empty());
     }
 
-    public static Optional<File> openFile(Scene scene, String initialFileName) {
+    public static Optional<Path> openFile(Scene scene, String initialFileName) {
         return openFile(scene, Optional.of(initialFileName));
     }
 
-    private static Optional<File> openFile(Scene scene, Optional<String> initialFileName) {
+    private static Optional<Path> openFile(Scene scene, Optional<String> initialFileName) {
         FileChooser fileChooser = getFileChooser(initialFileName);
-        Optional<File> result = Optional.ofNullable(fileChooser.showOpenDialog(scene.getWindow()));
+        Optional<Path> result = Optional.ofNullable(fileChooser.showOpenDialog(scene.getWindow())).map(File::toPath);
         result.ifPresent(file -> persistFileChooserDirectory(file, IS_FILE_CHOOSER));
         return result;
     }
 
-    public static Optional<File> saveFile(Scene scene) {
+    public static Optional<Path> saveFile(Scene scene) {
         return saveFile(scene, Optional.empty());
     }
 
-    public static Optional<File> saveFile(Scene scene, String initialFileName) {
+    public static Optional<Path> saveFile(Scene scene, String initialFileName) {
         return saveFile(scene, Optional.of(initialFileName));
     }
 
-    private static Optional<File> saveFile(Scene scene, Optional<String> initialFileName) {
+    private static Optional<Path> saveFile(Scene scene, Optional<String> initialFileName) {
         FileChooser fileChooser = getFileChooser(initialFileName);
-        Optional<File> result = Optional.ofNullable(fileChooser.showSaveDialog(scene.getWindow()));
+        Optional<Path> result = Optional.ofNullable(fileChooser.showSaveDialog(scene.getWindow())).map(File::toPath);
         result.ifPresent(file -> persistFileChooserDirectory(file, IS_FILE_CHOOSER));
         return result;
     }
 
-    public static Optional<File> chooseDirectory(Scene scene, String title) {
+    public static Optional<Path> chooseDirectory(Scene scene, String title) {
         return chooseDirectory(scene, Optional.empty(), title);
     }
 
-    public static Optional<File> chooseDirectory(Scene scene, String initialDirectory, String title) {
+    public static Optional<Path> chooseDirectory(Scene scene, String initialDirectory, String title) {
         return chooseDirectory(scene, Optional.of(initialDirectory), title);
     }
 
-    private static Optional<File> chooseDirectory(Scene scene, Optional<String> initialDirectory, String title) {
+    private static Optional<Path> chooseDirectory(Scene scene, Optional<String> initialDirectory, String title) {
         DirectoryChooser directoryChooser = new DirectoryChooser();
         String directory = initialDirectory
                 .orElseGet(() -> SettingsService.getInstance().getCookie().asString(CookieKey.FILE_CHOOSER_DIR)
                         .orElseGet(PlatformUtils::getDownloadOfHomeDir));
-        File initDir = new File(directory);
-        if (initDir.isDirectory()) {
-            directoryChooser.setInitialDirectory(initDir);
+        Path initDir = Path.of(directory);
+        if (Files.isDirectory(initDir)) {
+            directoryChooser.setInitialDirectory(initDir.toFile());
         }
         directoryChooser.setTitle(title);
-        Optional<File> result = Optional.ofNullable(directoryChooser.showDialog(scene.getWindow()));
+        Optional<Path> result = Optional.ofNullable(directoryChooser.showDialog(scene.getWindow())).map(File::toPath);
         result.ifPresent(file -> persistFileChooserDirectory(file, IS_DIRECTORY_CHOOSER));
         return result;
     }
@@ -93,15 +94,15 @@ public class FileChooserUtil {
         initialFileName.ifPresent(fileChooser::setInitialFileName);
         String initialDirectory = SettingsService.getInstance().getCookie().asString(CookieKey.FILE_CHOOSER_DIR)
                 .orElseGet(PlatformUtils::getDownloadOfHomeDir);
-        File initDir = new File(initialDirectory);
-        if (initDir.isDirectory()) {
-            fileChooser.setInitialDirectory(initDir);
+        Path initDir = Path.of(initialDirectory);
+        if (Files.isDirectory(initDir)) {
+            fileChooser.setInitialDirectory(initDir.toFile());
         }
         return fileChooser;
     }
 
-    private static void persistFileChooserDirectory(File file, boolean isDirectoryChooser) {
-        String directoryToPersist = isDirectoryChooser ? file.getAbsolutePath() : Paths.get(file.getAbsolutePath()).getParent().toString();
+    private static void persistFileChooserDirectory(Path file, boolean isDirectoryChooser) {
+        String directoryToPersist = isDirectoryChooser ? file.toAbsolutePath().toString() : file.getParent().toString();
         SettingsService.getInstance().setCookie(CookieKey.FILE_CHOOSER_DIR, directoryToPersist);
     }
 }

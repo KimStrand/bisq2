@@ -19,9 +19,9 @@ package bisq.common.platform;
 
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -85,8 +85,8 @@ public class PlatformUtils {
         return open(url);
     }
 
-    public static boolean open(File file) {
-        return open(file.getPath());
+    public static boolean open(Path path) {
+        return open(path.toString());
     }
 
     public static boolean open(String target) {
@@ -145,9 +145,9 @@ public class PlatformUtils {
     }
 
     public static String getDownloadOfHomeDir() {
-        File file = new File(getHomeDirectory() + "/Downloads");
-        if (file.exists()) {
-            return file.getAbsolutePath();
+        Path file = Path.of(getHomeDirectory(), "Downloads");
+        if (Files.exists(file)) {
+            return file.toAbsolutePath().toString();
         } else {
             return getHomeDirectory();
         }

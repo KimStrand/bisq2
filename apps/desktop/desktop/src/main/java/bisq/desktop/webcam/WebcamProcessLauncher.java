@@ -25,10 +25,12 @@ import bisq.common.platform.OS;
 import bisq.common.threading.ExecutorFactory;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.File;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -49,12 +51,12 @@ public class WebcamProcessLauncher {
             try {
                 String version = FileUtils.readStringFromResource("webcam-app/version.txt");
                 String jarFilePath = webcamDir + "/webcam-app-" + version + "-all.jar";
-                File jarFile = new File(jarFilePath);
+                Path jarFile = Paths.get(jarFilePath);
 
-                if (!jarFile.exists() || DevMode.isDevMode()) {
+                if (!Files.exists(jarFile) || DevMode.isDevMode()) {
                     String resourcePath = "webcam-app/webcam-app-" + version + ".zip";
                     InputStream inputStream = getClass().getClassLoader().getResourceAsStream(resourcePath);
-                    File destDir = new File(webcamDir);
+                    Path destDir = Paths.get(webcamDir);
                     ZipFileExtractor zipFileExtractor = new ZipFileExtractor(inputStream, destDir);
                     zipFileExtractor.extractArchive();
                     log.info("Extracted zip file {} to {}", resourcePath, webcamDir);
@@ -68,8 +70,8 @@ public class WebcamProcessLauncher {
                 ProcessBuilder processBuilder;
                 if (OS.isMacOs()) {
                     String iconPath = webcamDir + "/webcam-app-icon.png";
-                    File bisqIcon = new File(iconPath);
-                    if (!bisqIcon.exists()) {
+                    Path bisqIcon = Paths.get(iconPath);
+                    if (!Files.exists(bisqIcon)) {
                         FileUtils.resourceToFile("images/webcam/webcam-app-icon@2x.png", bisqIcon);
                     }
                     String jvmArgs = "-Xdock:icon=" + iconPath;

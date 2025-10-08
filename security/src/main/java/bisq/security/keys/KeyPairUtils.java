@@ -35,7 +35,7 @@ public class KeyPairUtils {
             ECPrivateKey ecPrivate = (ECPrivateKey) keyPair.getPrivate();
             byte[] priv32 = toUnsignedFixedLength(ecPrivate.getS(), 32);
 
-            FileUtils.writeToFile(Hex.encode(priv32), targetPath.resolve("private_key_hex").toFile());
+            FileUtils.writeToFile(Hex.encode(priv32), targetPath.resolve("private_key_hex"));
             log.info("Persisted hex encoded 32-byte secp256k1 private key for tag {} at {}", tag, targetPath);
         } catch (Exception e) {
             log.error("Could not persist private key", e);

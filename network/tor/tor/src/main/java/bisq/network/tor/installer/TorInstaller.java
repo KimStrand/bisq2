@@ -20,8 +20,8 @@ package bisq.network.tor.installer;
 import bisq.common.file.FileUtils;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 @Slf4j
@@ -43,27 +43,27 @@ public class TorInstaller {
         }
     }
 
-    public void deleteVersionFile() {
-        File versionFile = torInstallationFiles.getVersionFile();
-        boolean isSuccess = versionFile.delete();
+    public void deleteVersionFile() throws IOException {
+        Path versionFile = torInstallationFiles.getVersionFile();
+        boolean isSuccess = Files.deleteIfExists(versionFile);
         if (isSuccess) {
-            log.debug("Deleted {}", versionFile.getAbsolutePath());
+            log.debug("Deleted {}", versionFile.toAbsolutePath());
         }
     }
 
     private boolean isTorUpToDate() throws IOException {
-        File versionFile = torInstallationFiles.getVersionFile();
-        return versionFile.exists() && VERSION.equals(FileUtils.readStringFromFile(versionFile));
+        Path versionFile = torInstallationFiles.getVersionFile();
+        return Files.exists(versionFile) && VERSION.equals(FileUtils.readStringFromFile(versionFile));
     }
 
     private void install() throws IOException {
         try {
-            File destDir = torInstallationFiles.getTorDir();
+            Path destDir = torInstallationFiles.getTorDir();
             new TorBinaryZipExtractor(destDir).extractBinary();
-            log.info("Tor files installed to {}", destDir.getAbsolutePath());
+            log.info("Tor files installed to {}", destDir.toAbsolutePath());
             // Only if we have successfully extracted all files we write our version file which is used to
             // check if we need to call installFiles.
-            File versionFile = torInstallationFiles.getVersionFile();
+            Path versionFile = torInstallationFiles.getVersionFile();
             FileUtils.writeToFile(VERSION, versionFile);
         } catch (Throwable e) {
             deleteVersionFile();

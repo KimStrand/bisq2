@@ -39,13 +39,13 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.freehaven.tor.control.PasswordDigest;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -123,12 +123,11 @@ public class TorService implements Service {
 
         Path torBinaryPath = getTorBinaryPath();
         if (!isTorRunning(torBinaryPath.toString())) {
-            File lockFile = torDataDirPath.resolve("lock").toFile();
-            if (lockFile.exists()) {
-                boolean isSuccess = lockFile.delete();
-                if (!isSuccess) {
-                    throw new IllegalStateException("Couldn't remove tor lock file.");
-                }
+            Path lockFile = torDataDirPath.resolve("lock");
+            try {
+                Files.deleteIfExists(lockFile);
+            } catch (IOException e) {
+                throw new IllegalStateException("Couldn't remove tor lock file.");
             }
         }
 
@@ -145,7 +144,7 @@ public class TorService implements Service {
         Path controlDirPath = torDataDirPath.resolve(BaseTorrcGenerator.CONTROL_DIR_NAME);
         Path controlPortFilePath = controlDirPath.resolve("control");
         try {
-            FileUtils.deleteFileAndWait(controlPortFilePath.toFile(), 5000);
+            FileUtils.deleteFileAndWait(controlPortFilePath, 5000);
         } catch (Exception e) {
             throw new RuntimeException("Failed to delete tor control port file", e);
         }
@@ -156,14 +155,14 @@ public class TorService implements Service {
         embeddedTorProcess.start();
 
         try {
-            FileUtils.waitUntilFileExists(controlPortFilePath.toFile(), 5000);
+            FileUtils.waitUntilFileExists(controlPortFilePath, 5000);
         } catch (Exception e) {
             throw new RuntimeException("Error while waiting for tor control port file to exist", e);
         }
 
         int controlPort = ControlPortFileParser.parse(controlPortFilePath);
 
-        FileUtils.deleteOnExit(controlPortFilePath.toFile());
+        FileUtils.deleteOnExit(controlPortFilePath);
 
         torController.initialize(controlPort);
         torController.authenticate(hashedControlPassword);
@@ -347,9 +346,9 @@ public class TorService implements Service {
     private void readExternalTorConfigMap() {
         try {
             String torConfigFileName = "external_tor.config";
-            File torConfigFile = transportConfig.getDataDir().resolve(torConfigFileName).toFile();
+            Path torConfigFile = transportConfig.getDataDir().resolve(torConfigFileName);
             String torConfig;
-            if (!torConfigFile.exists()) {
+            if (!Files.exists(torConfigFile)) {
                 torConfig = FileUtils.readStringFromResource("tor/" + torConfigFileName);
                 FileUtils.writeToFile(torConfig, torConfigFile);
             } else {
@@ -386,7 +385,7 @@ public class TorService implements Service {
     private void makeTorDir() {
         try {
             Path torDataDirPath = transportConfig.getDataDir();
-            FileUtils.makeDirs(torDataDirPath.toFile());
+            FileUtils.makeDirs(torDataDirPath);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

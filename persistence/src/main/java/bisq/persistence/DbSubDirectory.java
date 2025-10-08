@@ -2,7 +2,7 @@ package bisq.persistence;
 
 import lombok.Getter;
 
-import java.io.File;
+import java.nio.file.Path;
 
 @Getter
 public enum DbSubDirectory {
@@ -14,6 +14,6 @@ public enum DbSubDirectory {
     private final String dbPath;
 
     DbSubDirectory(String subDir) {
-        this.dbPath = "db" + File.separator + subDir;
+        this.dbPath = Path.of("db", subDir).toString();
     }
 }

@@ -21,14 +21,19 @@ import bisq.common.file.FileUtils;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.image.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.PixelFormat;
+import javafx.scene.image.PixelReader;
+import javafx.scene.image.PixelWriter;
+import javafx.scene.image.WritableImage;
+import javafx.scene.image.WritablePixelFormat;
 import javafx.scene.paint.Color;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
 
 public class CatHashImageUtil {
     private static final String BASE_PATH = "images/cathash/";
@@ -64,14 +69,14 @@ public class CatHashImageUtil {
         return canvas.snapshot(snapshotParameters, null);
     }
 
-    public static Image readRawImage(File file) throws IOException {
-        byte[] rawData = FileUtils.read(file.getAbsolutePath());
+    public static Image readRawImage(Path path) throws IOException {
+        byte[] rawData = FileUtils.read(path);
         return byteArrayToImage(rawData);
     }
 
-    public static void writeRawImage(Image image, File file) throws IOException {
+    public static void writeRawImage(Image image, Path path) throws IOException {
         byte[] rawData = imageToByteArray(image);
-        FileUtils.write(file.getAbsolutePath(), rawData);
+        FileUtils.write(path, rawData);
     }
 
     public static Image byteArrayToImage(byte[] data) {

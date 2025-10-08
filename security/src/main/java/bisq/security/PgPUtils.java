@@ -18,11 +18,24 @@
 package bisq.security;
 
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.openpgp.*;
+import org.bouncycastle.openpgp.PGPException;
+import org.bouncycastle.openpgp.PGPObjectFactory;
+import org.bouncycastle.openpgp.PGPPublicKey;
+import org.bouncycastle.openpgp.PGPPublicKeyRing;
+import org.bouncycastle.openpgp.PGPPublicKeyRingCollection;
+import org.bouncycastle.openpgp.PGPSignature;
+import org.bouncycastle.openpgp.PGPSignatureList;
+import org.bouncycastle.openpgp.PGPUtil;
 import org.bouncycastle.openpgp.operator.bc.BcPGPContentVerifierBuilderProvider;
 import org.bouncycastle.openpgp.operator.jcajce.JcaKeyFingerprintCalculator;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.DataInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
 import java.security.SignatureException;
 import java.util.Iterator;
 
@@ -32,7 +45,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 @Slf4j
 public class PgPUtils {
 
-    public static boolean isSignatureValid(File pubKeyFile, File sigFile, File dataFile) {
+    private static boolean isSignatureValid(File pubKeyFile, File sigFile, File dataFile) {
         try {
             PGPPublicKeyRing pgpPublicKeyRing = readPgpPublicKeyRing(pubKeyFile);
             PGPSignature pgpSignature = readPgpSignature(sigFile);
@@ -46,7 +59,11 @@ public class PgPUtils {
         }
     }
 
-    public static PGPPublicKeyRing readPgpPublicKeyRing(File pubKeyFile) throws IOException, PGPException {
+    public static boolean isSignatureValid(Path pubKeyFile, Path sigFile, Path dataFile) {
+        return isSignatureValid(pubKeyFile.toFile(), sigFile.toFile(), dataFile.toFile());
+    }
+
+    private static PGPPublicKeyRing readPgpPublicKeyRing(File pubKeyFile) throws IOException, PGPException {
         try (InputStream inputStream = PGPUtil.getDecoderStream(new FileInputStream(pubKeyFile))) {
             PGPPublicKeyRingCollection publicKeyRingCollection = new PGPPublicKeyRingCollection(inputStream, new JcaKeyFingerprintCalculator());
             Iterator<PGPPublicKeyRing> iterator = publicKeyRingCollection.getKeyRings();
@@ -58,7 +75,11 @@ public class PgPUtils {
         }
     }
 
-    public static PGPSignature readPgpSignature(File sigFile) throws IOException, SignatureException {
+    public static PGPPublicKeyRing readPgpPublicKeyRing(Path pubKeyFile) throws IOException, PGPException {
+        return readPgpPublicKeyRing(pubKeyFile.toFile());
+    }
+
+    private static PGPSignature readPgpSignature(File sigFile) throws IOException, SignatureException {
         try (InputStream inputStream = PGPUtil.getDecoderStream(new FileInputStream(sigFile))) {
             PGPObjectFactory pgpObjectFactory = new PGPObjectFactory(inputStream, new JcaKeyFingerprintCalculator());
             Object signatureObject = pgpObjectFactory.nextObject();
@@ -73,7 +94,13 @@ public class PgPUtils {
         }
     }
 
-    public static boolean isSignatureValid(PGPSignature pgpSignature, PGPPublicKey publicKey, File dataFile) throws IOException, PGPException {
+    public static PGPSignature readPgpSignature(Path sigFile) throws IOException, SignatureException {
+        return readPgpSignature(sigFile.toFile());
+    }
+
+    private static boolean isSignatureValid(PGPSignature pgpSignature,
+                                           PGPPublicKey publicKey,
+                                           File dataFile) throws IOException, PGPException {
         checkArgument(pgpSignature.getKeyID() == publicKey.getKeyID(), "Key ID from signature not matching key ID from pub Key");
         pgpSignature.init(new BcPGPContentVerifierBuilderProvider(), publicKey);
         try (InputStream inputStream = new DataInputStream(new BufferedInputStream(new FileInputStream(dataFile)))) {
@@ -87,5 +114,11 @@ public class PgPUtils {
             }
             return pgpSignature.verify();
         }
+    }
+
+    public static boolean isSignatureValid(PGPSignature pgpSignature,
+                                           PGPPublicKey publicKey,
+                                           Path dataFile) throws IOException, PGPException {
+        return isSignatureValid(pgpSignature, publicKey, dataFile.toFile());
     }
 }

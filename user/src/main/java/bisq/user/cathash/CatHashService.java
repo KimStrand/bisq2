@@ -28,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
@@ -64,9 +65,9 @@ public abstract class CatHashService<T> {
 
     protected abstract T composeImage(String[] paths, double size);
 
-    protected abstract void writeRawImage(T image, File iconFile) throws IOException;
+    protected abstract void writeRawImage(T image, Path iconFile) throws IOException;
 
-    protected abstract T readRawImage(File iconFile) throws IOException;
+    protected abstract T readRawImage(Path iconFile) throws IOException;
 
     public T getImage(UserProfile userProfile, double size) {
         return getImage(userProfile.getPubKeyHash(),
@@ -79,8 +80,9 @@ public abstract class CatHashService<T> {
         byte[] combined = ByteArrayUtils.concat(powSolution, pubKeyHash);
         BigInteger catHashInput = new BigInteger(combined);
         String userProfileId = Hex.encode(pubKeyHash);
-        File iconsDir = Paths.get(getCatHashIconsDirectory().toString(), "v" + avatarVersion).toFile();
-        File iconFile = Paths.get(iconsDir.getAbsolutePath(), userProfileId + ".raw").toFile();
+
+        Path iconsDir = getCatHashIconsDirectory().resolve("v" + avatarVersion);
+        Path iconFile = iconsDir.resolve(userProfileId + ".raw");
 
         boolean useCache = size <= SIZE_OF_CACHED_ICONS;
         if (useCache) {
@@ -90,7 +92,7 @@ public abstract class CatHashService<T> {
             }
 
 
-            if (!iconsDir.exists()) {
+            if (!Files.exists(iconsDir)) {
                 try {
                     FileUtils.makeDirs(iconsDir);
                 } catch (IOException e) {
@@ -99,7 +101,7 @@ public abstract class CatHashService<T> {
             }
 
             // Next approach is to read the image from file
-            if (iconFile.exists()) {
+            if (Files.exists(iconFile)) {
                 try {
                     T image = readRawImage(iconFile);
                     if (cache.size() < MAX_CACHE_SIZE) {

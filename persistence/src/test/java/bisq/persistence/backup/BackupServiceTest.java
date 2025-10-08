@@ -25,30 +25,35 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.GregorianCalendar;
+import java.util.List;
 import java.util.function.Predicate;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Slf4j
 public class BackupServiceTest {
     private BackupService backupService;
     private final Path dataDir = PlatformUtils.getUserDataDir().resolve("bisq2_BackupServiceTest");
-    private File storeFile;
+    private Path storeFilePath;
 
     @BeforeEach
     void setUp() throws IOException {
         Path dbDir = dataDir.resolve("db");
         FileUtils.makeDirs(dbDir);
         String storeFileName = "test_store" + Persistence.EXTENSION;
-        Path storeFilePath = dbDir.resolve(storeFileName);
-        storeFile = storeFilePath.toFile();
+        storeFilePath = dbDir.resolve(storeFileName);
         backupService = new BackupService(dataDir, storeFilePath, MaxBackupSize.HUNDRED_MB);
     }
 
@@ -56,7 +61,6 @@ public class BackupServiceTest {
     void tearDown() throws IOException {
         FileUtils.deleteFileOrDirectory(dataDir);
     }
-
 
     @Test
     void testGetRelativePath2() {
@@ -140,13 +144,13 @@ public class BackupServiceTest {
 
     @Test
     void testBackup() throws IOException {
-        FileUtils.writeToFile("test", storeFile);
-        assertTrue(storeFile.exists());
-        File backupFile = backupService.getBackupFile();
-        assertFalse(backupFile.exists());
+        FileUtils.writeToFile("test", storeFilePath);
+        assertThat(storeFilePath).exists();
+        Path backupFile = backupService.getBackupFile();
+        assertThat(backupFile).doesNotExist();
         backupService.backup(backupFile);
-        assertTrue(backupFile.exists());
-        assertFalse(storeFile.exists());
+        assertThat(backupFile).exists();
+        assertThat(storeFilePath).doesNotExist();
     }
 
     @Test
@@ -409,7 +413,6 @@ public class BackupServiceTest {
         remaining.removeAll(outdatedBackupFileInfos);
         assertTrue(outdatedBackupFileInfos.contains(createBackupFileInfo(fileName, fileNames.get(2))));
 
-
         // All mixed up
         now = LocalDateTime.parse("2024-12-30_1755", BackupService.DATE_FORMAT); // monday
         fileNames = List.of(
@@ -488,14 +491,13 @@ public class BackupServiceTest {
             calendar.add(Calendar.SECOND, -writeFrequency);
             Date calendarTime = calendar.getTime();
             LocalDateTime localDateTime = LocalDateTime.ofInstant(calendarTime.toInstant(), ZoneId.systemDefault());
-            File backupFile = backupService.getBackupFile(localDateTime);
+            Path backupFile = backupService.getBackupFile(localDateTime);
             // As we rename the storage file at backup we need to create it before backup.
-            FileUtils.writeToFile("test", storeFile);
+            FileUtils.writeToFile("test", storeFilePath);
             backupService.backup(backupFile);
         }
         log.error("createBackups took {} ms", System.currentTimeMillis() - ts); // seconds * minutes * hours -> took 16275 ms
     }
-
 
     private static BackupFileInfo createBackupFileInfo(String fileName, String fileNameWithDate) {
         return BackupFileInfo.from(fileName, fileNameWithDate).orElseThrow();

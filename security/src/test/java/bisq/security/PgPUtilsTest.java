@@ -27,6 +27,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.SignatureException;
@@ -38,12 +39,12 @@ import static org.junit.jupiter.api.Assertions.*;
 public class PgPUtilsTest {
     @BeforeEach
     void setUp() throws IOException {
-        FileUtils.makeDirs(Path.of("temp").toFile());
+        FileUtils.makeDirs(Path.of("temp"));
     }
 
     @AfterEach
     void tearDown() throws IOException {
-        FileUtils.deleteFileOrDirectory(Path.of("temp").toFile());
+        FileUtils.deleteFileOrDirectory(Path.of("temp"));
     }
 
     @Test
@@ -77,7 +78,7 @@ public class PgPUtilsTest {
         try {
             PGPSignature signature = getPGPSignature("testData.txt.asc");
             PGPPublicKeyRing pgpPublicKeyRing = getPGPPublicKeyRing("387C8307.asc");
-            File data = getDataAsFile("testData.txt");
+            Path data = getDataAsFile("testData.txt");
             boolean isValid = PgPUtils.isSignatureValid(signature, pgpPublicKeyRing.getPublicKey(), data);
             assertTrue(isValid);
         } catch (Exception e) {
@@ -87,41 +88,41 @@ public class PgPUtilsTest {
     }
 
     private PGPPublicKeyRing getPGPPublicKeyRing(String fileName) throws IOException, PGPException {
-        File file = Paths.get("temp", fileName).toFile();
+        Path path = Paths.get("temp", fileName);
         try {
             try (InputStream resource = FileUtils.getResourceAsStream(fileName)) {
-                OutputStream out = new FileOutputStream(file);
+                OutputStream out = Files.newOutputStream(path);
                 FileUtils.copy(resource, out);
             }
-            return PgPUtils.readPgpPublicKeyRing(file);
+            return PgPUtils.readPgpPublicKeyRing(path);
         } finally {
-            file.deleteOnExit();
+            path.toFile().deleteOnExit();
         }
     }
 
     private PGPSignature getPGPSignature(String fileName) throws IOException, SignatureException {
-        File file = Paths.get("temp", fileName).toFile();
+        Path path = Paths.get("temp", fileName);
         try {
             try (InputStream resource = FileUtils.getResourceAsStream(fileName)) {
-                OutputStream out = new FileOutputStream(file);
+                OutputStream out = Files.newOutputStream(path);
                 FileUtils.copy(resource, out);
             }
-            return PgPUtils.readPgpSignature(file);
+            return PgPUtils.readPgpSignature(path);
         } finally {
-            file.deleteOnExit();
+            path.toFile().deleteOnExit();
         }
     }
 
-    private File getDataAsFile(String fileName) throws IOException {
-        File file = Paths.get("temp", fileName).toFile();
+    private Path getDataAsFile(String fileName) throws IOException {
+        Path path = Paths.get("temp", fileName);
         try {
             try (InputStream resource = FileUtils.getResourceAsStream(fileName)) {
-                OutputStream out = new FileOutputStream(file);
+                OutputStream out = Files.newOutputStream(path);
                 FileUtils.copy(resource, out);
             }
-            return file;
+            return path;
         } finally {
-            file.deleteOnExit();
+            path.toFile().deleteOnExit();
         }
     }
 }

@@ -20,8 +20,8 @@ package bisq.persistence;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 
@@ -29,7 +29,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class PersistableStoreFileManagerTests {
-    private static final String BACKUP_DIR = "backup" + File.separator;
 
     @Test
     void createParentDirIfExisting(@TempDir Path tempDir) {
@@ -84,7 +83,7 @@ public class PersistableStoreFileManagerTests {
     }
 
     public static void createEmptyFile(Path path) throws IOException {
-        boolean isSuccess = path.toFile().createNewFile();
-        assertThat(isSuccess).isTrue();
+        Files.createFile(path);
+        assertThat(path).exists();
     }
 }

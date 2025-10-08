@@ -23,12 +23,15 @@ import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import static bisq.evolution.updater.UpdaterUtils.*;
+import static bisq.evolution.updater.UpdaterUtils.ASC_EXTENSION;
+import static bisq.evolution.updater.UpdaterUtils.FROM_BISQ_WEBPAGE_PREFIX;
+import static bisq.evolution.updater.UpdaterUtils.GITHUB_DOWNLOAD_URL;
+import static bisq.evolution.updater.UpdaterUtils.PUB_KEYS_URL;
+import static bisq.evolution.updater.UpdaterUtils.SIGNING_KEY_FILE;
 
 @Slf4j
 @ToString
@@ -58,18 +61,18 @@ public class DownloadItem {
     }
 
     private static DownloadItem create(String sourceFileName, String destinationFileName, String baseUrl, String destinationDirectory) {
-        File destination = Path.of(destinationDirectory, destinationFileName).toFile();
+        Path destination = Path.of(destinationDirectory, destinationFileName);
         String urlPath = baseUrl + sourceFileName;
         return new DownloadItem(urlPath, destination, sourceFileName);
     }
 
     private final String urlPath;
-    private final File destinationFile;
+    private final Path destinationFile;
     private final String sourceFileName;
     @ToString.Exclude
     private final Observable<Double> progress = new Observable<>(-1d);
 
-    private DownloadItem(String urlPath, File destinationFile, String sourceFileName) {
+    private DownloadItem(String urlPath, Path destinationFile, String sourceFileName) {
         this.urlPath = urlPath;
         this.destinationFile = destinationFile;
         this.sourceFileName = sourceFileName;

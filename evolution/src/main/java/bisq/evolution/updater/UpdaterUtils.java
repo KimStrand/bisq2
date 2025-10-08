@@ -21,7 +21,6 @@ import bisq.common.file.FileUtils;
 import bisq.common.platform.Platform;
 import bisq.common.platform.PlatformUtils;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -38,11 +37,11 @@ public class UpdaterUtils {
     public static final String ASC_EXTENSION = ".asc";
 
     public static String getSigningKeyId(String directory) throws IOException {
-        return FileUtils.readStringFromFile(Path.of(directory, SIGNING_KEY_FILE).toFile());
+        return FileUtils.readStringFromFile(Path.of(directory, SIGNING_KEY_FILE));
     }
 
     public static String getSigningKey(String directory, String signingKeyId) throws IOException {
-        return FileUtils.readStringFromFile(Path.of(directory, signingKeyId + ASC_EXTENSION).toFile());
+        return FileUtils.readStringFromFile(Path.of(directory, signingKeyId + ASC_EXTENSION));
     }
 
     public static String getDownloadFileName(String version, boolean isLauncherUpdate) {
@@ -59,8 +58,7 @@ public class UpdaterUtils {
     }
 
     public static Optional<String> readVersionFromVersionFile(String userDataDir) {
-        String versionFilePath = userDataDir + File.separator + VERSION_FILE_NAME;
-        return FileUtils.readFromFileIfPresent(new File(versionFilePath));
+        return FileUtils.readFromFileIfPresent(Path.of(userDataDir, VERSION_FILE_NAME));
     }
 
     public static boolean isDownloadedFile(String fileName) {

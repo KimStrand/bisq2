@@ -38,9 +38,9 @@ public class I2PKeyUtils {
         Path identityBase64Path = I2PKeyGeneration.getDestinationFilePath(storageDir, tag, "identity_b64");
         try {
             FileUtils.makeDirs(i2pPrivateKeyDir);
-            FileUtils.writeToFile(i2pKeyPair.getDestinationBase64(), destination_b64Path.toFile());
-            FileUtils.writeToFile(i2pKeyPair.getDestinationBase32(), destination_b32Path.toFile());
-            FileUtils.writeToFile(Base64.encode(i2pKeyPair.getIdentityBytes()), identityBase64Path.toFile());
+            FileUtils.writeToFile(i2pKeyPair.getDestinationBase64(), destination_b64Path);
+            FileUtils.writeToFile(i2pKeyPair.getDestinationBase32(), destination_b32Path);
+            FileUtils.writeToFile(Base64.encode(i2pKeyPair.getIdentityBytes()), identityBase64Path);
             log.info("Persisted the I2P private key and destinations into {}", i2pPrivateKeyDir);
         } catch (Exception e) {
             log.error("Could not persist I2P destination files", e);

@@ -19,7 +19,7 @@ package bisq.common.facades.android;
 
 import bisq.common.facades.JdkFacade;
 
-import java.io.File;
+import java.nio.file.Path;
 import java.util.stream.Stream;
 
 public class AndroidJdkFacade implements JdkFacade {
@@ -44,12 +44,12 @@ public class AndroidJdkFacade implements JdkFacade {
     @Override
     public void redirectError(ProcessBuilder processBuilder) {
         // ProcessBuilder.Redirect.DISCARD not supported on Android
-        processBuilder.redirectError(new File("/dev/null"));
+        processBuilder.redirectError(Path.of("/dev/null").toFile());
     }
 
     @Override
     public void redirectOutput(ProcessBuilder processBuilder) {
         // ProcessBuilder.Redirect.DISCARD not supported on Android
-        processBuilder.redirectError(new File("/dev/null"));
+        processBuilder.redirectError(Path.of("/dev/null").toFile());
     }
 }

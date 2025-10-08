@@ -30,7 +30,6 @@ import com.google.common.base.Strings;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -221,7 +220,7 @@ public class KeyBundleService implements PersistenceClient<KeyBundleStore>, Serv
                     log.error("Could not create {}", defaultKeyStoragePath);
                     throw new RuntimeException(e);
                 }
-                File file = defaultKeyStoragePath.resolve("keyStoreSecretUid").toFile();
+                Path file = defaultKeyStoragePath.resolve("keyStoreSecretUid");
                 try {
                     FileUtils.writeToFile(persistableStore.getSecretUid(), file);
                 } catch (IOException e) {

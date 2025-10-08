@@ -40,7 +40,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Nullable;
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URL;
@@ -209,7 +208,7 @@ public class UpdaterService implements Service {
         String downloadFileName = UpdaterUtils.getDownloadFileName(version, isLauncherUpdate);
         String destinationDirectory = isLauncherUpdate ? PlatformUtils.getDownloadOfHomeDir() :
                 Path.of(baseDir, UPDATES_DIR, version).toString();
-        FileUtils.makeDirs(new File(destinationDirectory));
+        FileUtils.makeDirs(Path.of(destinationDirectory));
         downloadItemList.setAll(DownloadItem.createDescriptorList(version, destinationDirectory, downloadFileName, keyIds));
         if (executorService == null) {
             executorService = ExecutorFactory.newSingleThreadExecutor("DownloadExecutor");
@@ -314,7 +313,7 @@ public class UpdaterService implements Service {
     static CompletionStage<Void> writeVersionFile(String version, String baseDir, ExecutorService executorService) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                FileUtils.writeToFile(version, new File(baseDir, VERSION_FILE_NAME));
+                FileUtils.writeToFile(version, Path.of(baseDir, VERSION_FILE_NAME));
                 return null;
             } catch (Exception e) {
                 e.printStackTrace();
