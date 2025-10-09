@@ -106,6 +106,8 @@ public class MuSigService extends LifecycleService {
 
     @Getter
     private final Observable<Boolean> muSigActivated = new Observable<>(false);
+    @Getter
+    private final Observable<MuSigOffer> selectedMuSigOffer = new Observable<>();
     private final MediationRequestService mediationRequestService;
     private final MuSigTradeService muSigTradeService;
     private final MuSigOpenTradeChannelService muSigOpenTradeChannelService;
@@ -176,6 +178,9 @@ public class MuSigService extends LifecycleService {
     public CompletableFuture<Boolean> shutdown() {
         log.info("shutdown");
         if (muSigActivatedPin != null) {
+            if (getState() == State.ACTIVATED || getState() == State.ACTIVATING_FAILED) {
+                deactivate();
+            }
             muSigActivatedPin.unbind();
             muSigActivatedPin = null;
         }
