@@ -58,10 +58,6 @@ public class FileUtils {
         return Files.readString(path, StandardCharsets.UTF_8);
     }
 
-    public static void writeUTF8String(Path path, String content) throws IOException {
-        Files.writeString(path, content, StandardCharsets.UTF_8);
-    }
-
     /**
      * The `File.deleteOnExit` method is not suited for long-running processes as it never removes the added files,
      * thus leading to a memory leak.
