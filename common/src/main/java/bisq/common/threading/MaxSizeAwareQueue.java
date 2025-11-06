@@ -35,7 +35,10 @@ public class MaxSizeAwareQueue extends LinkedBlockingQueue<Runnable> {
     }
 
     private boolean shouldInsert() {
-        return executor != null && executor.getPoolSize() >= executor.getMaximumPoolSize();
+        var result = executor != null && executor.getPoolSize() >= executor.getMaximumPoolSize();
+        var siz = executor.getPoolSize();
+        var maxsiz = executor.getMaximumPoolSize();
+        return result;
     }
 
     @Override

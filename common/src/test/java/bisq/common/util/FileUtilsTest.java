@@ -5,8 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -26,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Slf4j
 public class FileUtilsTest {
 
+    // READ
+
     @Test
     public void hasResourceFile() {
         assertTrue(FileUtils.hasResourceFile("logback.xml"));
@@ -38,6 +38,95 @@ public class FileUtilsTest {
         Files.write(path, "abc".getBytes());
         assertEquals("abc", FileUtils.readUTF8String(path));
     }
+
+    @Test
+    void testWaitUntilFileExists(@TempDir Path tempDirPath) throws InterruptedException, TimeoutException {
+        Path path = tempDirPath.resolve("waitExists.txt");
+        new Thread(() -> {
+            try {
+                Thread.sleep(200);
+                Files.createFile(path);
+            } catch (Exception ignored) {
+            }
+        }).start();
+        FileUtils.waitUntilFileExists(path, 1000);
+        assertThat(path).exists();
+    }
+
+    @Test
+    void testListRegularFilesInDirectory(@TempDir Path tempDirPath) throws IOException {
+        Path dirPath = tempDirPath.resolve("listdir");
+        Files.createDirectory(dirPath);
+        Files.createFile(dirPath.resolve("a.txt"));
+        Files.createFile(dirPath.resolve("b.txt"));
+        Set<String> files = FileUtils.listFilesInDirectory(dirPath, 1);
+        assertTrue(files.contains("a.txt"));
+        assertTrue(files.contains("b.txt"));
+    }
+
+    @Test
+    void testReadFromFileIfPresent(@TempDir Path tempDirPath) throws IOException {
+        Path path = tempDirPath.resolve("present.txt");
+        Files.write(path, "abc".getBytes());
+        Optional<String> result = FileUtils.readFromFileIfPresent(path);
+        assertTrue(result.isPresent());
+        assertEquals("abc", result.get());
+    }
+
+    @Test
+    void testReadFromScanner() {
+        String input = String.format("%s%s%s", "line1", System.lineSeparator(), "line2");
+        Scanner scanner = new Scanner(input);
+        String expected = String.format("%s%s%s", "line1", System.lineSeparator(), "line2");
+        String actual = FileUtils.readFromScanner(scanner);
+        assertEquals(expected, actual);
+    }
+
+    @Test
+    void testGetResourceAsStream() throws IOException {
+        InputStream is = FileUtils.getResourceAsStream("logback.xml");
+        assertNotNull(is);
+        is.close();
+    }
+
+    @Test
+    void testListDirectories(@TempDir Path tempDirPath) throws IOException {
+        Path dirPath = tempDirPath.resolve("listdirs");
+        Files.createDirectory(dirPath);
+
+        // Create subdirectories
+        Path subPath1 = dirPath.resolve("subdir1");
+        Path subPath2 = dirPath.resolve("subdir2");
+        Files.createDirectory(subPath1);
+        Files.createDirectory(subPath2);
+
+        // Create a file to ensure it is not included
+        Path filePath = dirPath.resolve("file.txt");
+        Files.createFile(filePath);
+
+        // Call method under test
+        Set<String> dirs = FileUtils.listDirectories(dirPath);
+
+        // Assertions
+        assertEquals(2, dirs.size(), "Should only contain 2 directories");
+        assertTrue(dirs.contains("subdir1"), "subdir1 should be listed");
+        assertTrue(dirs.contains("subdir2"), "subdir2 should be listed");
+        assertFalse(dirs.contains("file.txt"), "Files should not be listed");
+    }
+
+    @Test
+    void testHasResourceFile() {
+        assertTrue(FileUtils.hasResourceFile("logback.xml"));
+        assertFalse(FileUtils.hasResourceFile("nonexistent.xml"));
+    }
+
+    @Test
+    void testListResources() throws Exception {
+        Set<String> resources = FileUtils.listResources("bisq/common/util/");
+        assertTrue(resources.contains("FileUtilsTest.class"));
+    }
+
+    // WRITE
 
     @Test
     void testDeleteOnExitAndReleaseTempFile(@TempDir Path tempDirPath) throws IOException {
@@ -91,47 +180,6 @@ public class FileUtilsTest {
     }
 
     @Test
-    void testDeleteFileAndWait(@TempDir Path tempDirPath) throws IOException, InterruptedException {
-        Path path = tempDirPath.resolve("wait.txt");
-        Files.createFile(path);
-        FileUtils.deleteFileAndWait(path, 1000);
-        assertThat(path).doesNotExist();
-    }
-
-    @Test
-    void testWaitUntilFileExists(@TempDir Path tempDirPath) throws InterruptedException, TimeoutException {
-        Path path = tempDirPath.resolve("waitExists.txt");
-        new Thread(() -> {
-            try {
-                Thread.sleep(200);
-                Files.createFile(path);
-            } catch (Exception ignored) {
-            }
-        }).start();
-        FileUtils.waitUntilFileExists(path, 1000);
-        assertThat(path).exists();
-    }
-
-    @Test
-    void testCreateTempDirPath() throws IOException {
-        Path tempPath = FileUtils.createTempDirPath();
-        assertTrue(Files.isDirectory(tempPath));
-        // Clean up
-        FileUtils.deleteFileOrDirectory(tempPath);
-    }
-
-    @Test
-    void testListRegularFilesInDirectory(@TempDir Path tempDirPath) throws IOException {
-        Path dirPath = tempDirPath.resolve("listdir");
-        Files.createDirectory(dirPath);
-        Files.createFile(dirPath.resolve("a.txt"));
-        Files.createFile(dirPath.resolve("b.txt"));
-        Set<String> files = FileUtils.listFilesInDirectory(dirPath, 1);
-        assertTrue(files.contains("a.txt"));
-        assertTrue(files.contains("b.txt"));
-    }
-
-    @Test
     void testRenameFileOverExistingFile(@TempDir Path tempDirPath) throws IOException {
         // Create the source file
         Path sourceFilePath = tempDirPath.resolve("source.txt");
@@ -156,35 +204,28 @@ public class FileUtilsTest {
     }
 
     @Test
+    void testDeleteFileAndWait(@TempDir Path tempDirPath) throws IOException, InterruptedException {
+        Path path = tempDirPath.resolve("wait.txt");
+        Files.createFile(path);
+        FileUtils.deleteFileAndWait(path, 1000);
+        assertThat(path).doesNotExist();
+    }
+
+    @Test
+    void testRenameFile(@TempDir Path tempDirPath) throws IOException {
+        Path oldPath = tempDirPath.resolve("old.txt");
+        Path newPath = tempDirPath.resolve("new.txt");
+        Files.write(oldPath, "rename".getBytes());
+        assertTrue(FileUtils.renameFile(oldPath, newPath));
+        assertTrue(Files.exists(newPath));
+        assertFalse(Files.exists(oldPath));
+    }
+
+    @Test
     void testWriteToPath(@TempDir Path tempDirPath) throws IOException {
         Path path = tempDirPath.resolve("writefile.txt");
         FileUtils.writeToPath("data", path);
         assertEquals("data", Files.readString(path));
-    }
-
-    @Test
-    void testReadFromFileIfPresent(@TempDir Path tempDirPath) throws IOException {
-        Path path = tempDirPath.resolve("present.txt");
-        Files.write(path, "abc".getBytes());
-        Optional<String> result = FileUtils.readFromFileIfPresent(path);
-        assertTrue(result.isPresent());
-        assertEquals("abc", result.get());
-    }
-
-    @Test
-    void testReadFromScanner() {
-        String input = String.format("%s%s%s", "line1", System.lineSeparator(), "line2");
-        Scanner scanner = new Scanner(input);
-        String expected = String.format("%s%s%s", "line1", System.lineSeparator(), "line2");
-        String actual = FileUtils.readFromScanner(scanner);
-        assertEquals(expected, actual);
-    }
-
-    @Test
-    void testGetResourceAsStream() throws IOException {
-        InputStream is = FileUtils.getResourceAsStream("logback.xml");
-        assertNotNull(is);
-        is.close();
     }
 
     @Test
@@ -204,49 +245,6 @@ public class FileUtilsTest {
     }
 
     @Test
-    void testCopyInputStream() throws IOException {
-        ByteArrayInputStream in = new ByteArrayInputStream("abc".getBytes());
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        FileUtils.copy(in, out);
-        assertEquals("abc", out.toString());
-    }
-
-    @Test
-    void testListDirectories(@TempDir Path tempDirPath) throws IOException {
-        Path dirPath = tempDirPath.resolve("listdirs");
-        Files.createDirectory(dirPath);
-
-        // Create subdirectories
-        Path subPath1 = dirPath.resolve("subdir1");
-        Path subPath2 = dirPath.resolve("subdir2");
-        Files.createDirectory(subPath1);
-        Files.createDirectory(subPath2);
-
-        // Create a file to ensure it is not included
-        Path filePath = dirPath.resolve("file.txt");
-        Files.createFile(filePath);
-
-        // Call method under test
-        Set<String> dirs = FileUtils.listDirectories(dirPath);
-
-        // Assertions
-        assertEquals(2, dirs.size(), "Should only contain 2 directories");
-        assertTrue(dirs.contains("subdir1"), "subdir1 should be listed");
-        assertTrue(dirs.contains("subdir2"), "subdir2 should be listed");
-        assertFalse(dirs.contains("file.txt"), "Files should not be listed");
-    }
-
-    @Test
-    void testRenameFile(@TempDir Path tempDirPath) throws IOException {
-        Path oldPath = tempDirPath.resolve("old.txt");
-        Path newPath = tempDirPath.resolve("new.txt");
-        Files.write(oldPath, "rename".getBytes());
-        assertTrue(FileUtils.renameFile(oldPath, newPath));
-        assertTrue(Files.exists(newPath));
-        assertFalse(Files.exists(oldPath));
-    }
-
-    @Test
     void testBackupCorruptedFile(@TempDir Path tempDirPath) throws IOException {
         Path backupPath = tempDirPath.resolve("backup");
         Files.createDirectory(backupPath);
@@ -258,10 +256,25 @@ public class FileUtilsTest {
     }
 
     @Test
-    void testHasResourceFile() {
-        assertTrue(FileUtils.hasResourceFile("logback.xml"));
-        assertFalse(FileUtils.hasResourceFile("nonexistent.xml"));
+    void testCreateRestrictedDirectories(@TempDir Path tempDir) throws IOException {
+        Path nested = tempDir.resolve("a/b/c");
+
+        FileUtils.createRestrictedDirectories(nested);
+
+        assertTrue(Files.exists(nested));
+        assertTrue(Files.isDirectory(nested));
     }
+
+    @Test
+    void testCreateRestrictedDirectory(@TempDir Path tempDir) throws IOException {
+        Path single = tempDir.resolve("singleDir");
+
+        FileUtils.createRestrictedDirectory(single);
+
+        assertTrue(Files.exists(single));
+        assertTrue(Files.isDirectory(single));
+    }
+
 
     @Test
     void testCopyDirectoryWithExtensionsToSkip(@TempDir Path tempDirPath) throws IOException {
@@ -273,12 +286,6 @@ public class FileUtilsTest {
         FileUtils.copyDirectory(srcDirPath, destDirPath, Set.of("skip"));
         assertTrue(Files.exists(destDirPath.resolve("file.txt")));
         assertFalse(Files.exists(destDirPath.resolve("file.skip")));
-    }
-
-    @Test
-    void testListResources() throws Exception {
-        Set<String> resources = FileUtils.listResources("bisq/common/util/");
-        assertTrue(resources.contains("FileUtilsTest.class"));
     }
 
     @Test

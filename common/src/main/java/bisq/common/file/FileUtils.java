@@ -31,13 +31,15 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileVisitResult;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Optional;
@@ -54,9 +56,206 @@ import java.util.stream.Stream;
 public class FileUtils {
     public static final String FILE_SEP = File.separator;
 
+    private static final boolean IS_POSIX = FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
+
+    private static final Set<PosixFilePermission> OWNER_READ_WRITE_PERMISSIONS =
+            EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
+    private static final Set<PosixFilePermission> OWNER_READ_WRITE_EXECUTE_PERMISSIONS =
+            EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE);
+
+    private static final FileAttribute<Set<PosixFilePermission>> OWNER_READ_WRITE_PERMISSIONS_FILE_ATTRIBUTE =
+            PosixFilePermissions.asFileAttribute(OWNER_READ_WRITE_PERMISSIONS);
+    private static final FileAttribute<Set<PosixFilePermission>> OWNER_READ_WRITE_EXECUTE_PERMISSIONS_FILE_ATTRIBUTE =
+            PosixFilePermissions.asFileAttribute(OWNER_READ_WRITE_EXECUTE_PERMISSIONS);
+
+    // READS
+
     public static String readUTF8String(Path path) throws IOException {
         return Files.readString(path, StandardCharsets.UTF_8);
     }
+
+    /**
+     * <b>Blocking</b>; Waits until the specified path exists, polling every 100ms up to the given timeout.
+     *
+     * @throws InterruptedException if the thread is interrupted while waiting.
+     */
+    public static void waitUntilFileExists(Path path,
+                                           long timeoutMillis) throws InterruptedException, TimeoutException {
+        long start = System.currentTimeMillis();
+        while (!Files.exists(path)) {
+            if (System.currentTimeMillis() - start > timeoutMillis) {
+                throw new TimeoutException("File did not exist after " + timeoutMillis + " ms: " + path.toAbsolutePath());
+            }
+            Thread.sleep(100);
+        }
+    }
+
+    /**
+     * List all files (not directories) in the given directory up to the specified depth.
+     *
+     * @param path  The directory to list files from
+     * @param depth The maximum depth to traverse
+     * @return A set of file names (not paths) in the directory
+     * @throws IOException if an I/O error occurs
+     */
+    public static Set<String> listFilesInDirectory(Path path, int depth) throws IOException {
+        try (Stream<Path> stream = Files.walk(path, depth)) {
+            return stream
+                    .filter(p -> !Files.isDirectory(p))
+                    .map(Path::getFileName)
+                    .map(Path::toString)
+                    .collect(Collectors.toSet());
+        }
+    }
+
+    public static Optional<String> readFromFileIfPresent(Path path) {
+        try {
+            return Optional.of(Files.readString(path));
+        } catch (IOException e) {
+            return Optional.empty();
+        }
+    }
+
+    public static String readStringFromResource(String resourceName) throws IOException {
+        try (Scanner scanner = new Scanner(getResourceAsStream(resourceName))) {
+            return readFromScanner(scanner);
+        }
+    }
+
+    public static String readFromScanner(Scanner scanner) {
+        StringBuilder sb = new StringBuilder();
+        while (scanner.hasNextLine()) {
+            sb.append(scanner.nextLine());
+            if (scanner.hasNextLine()) {
+                sb.append(System.lineSeparator());
+            }
+        }
+        return sb.toString();
+    }
+
+    public static InputStream getResourceAsStream(String resourceName) throws IOException {
+        InputStream resource = FileUtils.class.getClassLoader().getResourceAsStream(resourceName);
+        if (resource == null) {
+            throw new IOException("Could not load " + resourceName);
+        }
+        return resource;
+    }
+
+    public static Set<String> listRegularFiles(Path dirPath) {
+        if (Files.notExists(dirPath)) {
+            return new HashSet<>();
+        }
+        try (Stream<Path> stream = Files.list(dirPath)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .map(Path::getFileName)
+                    .map(Path::toString)
+                    .collect(Collectors.toSet());
+        } catch (IOException e) {
+            log.error(e.toString(), e);
+            return new HashSet<>();
+        }
+    }
+
+    public static Set<String> listDirectories(Path dirPath) {
+        if (Files.notExists(dirPath)) {
+            return new HashSet<>();
+        }
+        try (Stream<Path> stream = Files.list(dirPath)) {
+            return stream
+                    .filter(Files::isDirectory)
+                    .map(Path::getFileName)
+                    .map(Path::toString)
+                    .collect(Collectors.toSet());
+        } catch (IOException e) {
+            log.error(e.toString(), e);
+            return new HashSet<>();
+        }
+    }
+
+    public static HttpURLConnection downloadFile(URL url,
+                                                 Path destinationPath,
+                                                 Observable<Double> progress) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        int fileSize;
+        try {
+            connection.connect();
+            try (InputStream inputStream = new BufferedInputStream(connection.getInputStream());
+                 OutputStream outputStream = Files.newOutputStream(destinationPath)) {
+                // If server does not provide contentLength it is -1
+                fileSize = connection.getContentLength();
+                double totalReadBytes = 0d;
+                byte[] buffer = new byte[1024];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                    if (fileSize != -1) {
+                        totalReadBytes += bytesRead;
+                        progress.set(totalReadBytes / fileSize);
+                    }
+                }
+                if (fileSize == -1) {
+                    progress.set(1d);
+                }
+            }
+        } finally {
+            connection.disconnect();
+        }
+        return connection;
+    }
+
+    public static boolean hasResourceFile(String fileName) {
+        return FileUtils.class.getClassLoader().getResource(fileName) != null;
+    }
+
+    public static Set<String> listResources(String resourceDir) throws IOException, URISyntaxException {
+        // Resource paths always use forward slashes on all OS.
+        String normalized = resourceDir.replace('\\', '/');
+        if (!normalized.endsWith("/")) {
+            normalized = normalized + "/";
+        }
+        URL dirURL = FileUtils.class.getClassLoader().getResource(normalized);
+        if (dirURL == null) {
+            throw new IOException("Resource directory not found: " + normalized);
+        }
+        String protocol = dirURL.getProtocol();
+        if ("file".equals(protocol)) {
+            Path dirPath = Path.of(dirURL.toURI());
+            if (!Files.isDirectory(dirPath)) {
+                throw new IOException("Resource path is not a directory: " + dirPath);
+            }
+            try (Stream<Path> stream = Files.walk(dirPath)) {
+                return stream
+                        .filter(Files::isRegularFile)
+                        .map(path -> dirPath.relativize(path).toString().replace(File.separatorChar, '/'))
+                        .collect(Collectors.toSet());
+            }
+        } else if ("jar".equals(protocol)) {
+            String jarUrlPath = dirURL.getPath();
+            int bangIndex = jarUrlPath.indexOf('!');
+            String jarFilePath = jarUrlPath.substring(0, bangIndex);
+            if (jarFilePath.startsWith("file:")) {
+                jarFilePath = jarFilePath.substring(5);
+            }
+            jarFilePath = URLDecoder.decode(jarFilePath, StandardCharsets.UTF_8);
+            Set<String> resourceFiles = new HashSet<>();
+            try (JarFile jar = new JarFile(jarFilePath)) {
+                Enumeration<JarEntry> entries = jar.entries();
+                while (entries.hasMoreElements()) {
+                    JarEntry entry = entries.nextElement();
+                    String name = entry.getName();
+                    if (!entry.isDirectory() && name.startsWith(normalized)) {
+                        resourceFiles.add(name.substring(normalized.length()));
+                    }
+                }
+            }
+            return resourceFiles;
+        } else {
+            throw new IOException("Unsupported URL protocol: " + protocol);
+        }
+    }
+
+    // WRITES
 
     /**
      * The `File.deleteOnExit` method is not suited for long-running processes as it never removes the added files,
@@ -122,79 +321,20 @@ public class FileUtils {
     }
 
     /**
-     * <b>Blocking</b>; Waits until the specified path exists, polling every 100ms up to the given timeout.
+     * Rename (move) a file from oldPath to newPath. If newPath exists, it will be replaced.
      *
-     * @throws InterruptedException if the thread is interrupted while waiting.
+     * @param oldPath The current path of the file
+     * @param newPath The new path of the file
+     * @return true if the file was successfully renamed, false otherwise
      */
-    public static void waitUntilFileExists(Path path,
-                                           long timeoutMillis) throws InterruptedException, TimeoutException {
-        long start = System.currentTimeMillis();
-        while (!Files.exists(path)) {
-            if (System.currentTimeMillis() - start > timeoutMillis) {
-                throw new TimeoutException("File did not exist after " + timeoutMillis + " ms: " + path.toAbsolutePath());
-            }
-            Thread.sleep(100);
-        }
-    }
-
-    /**
-     * Create a temporary directory that is automatically deleted on JVM exit.
-     *
-     * @return The path to the created temporary directory
-     * @throws IOException if an I/O error occurs
-     */
-    public static Path createTempDirPath() throws IOException {
-        Path tempPath = Files.createTempDirectory(null);
-        recursiveDeleteOnShutdownHook(tempPath);
-        return tempPath;
-    }
-
-    private static void recursiveDeleteOnShutdownHook(Path path) {
-        Runtime.getRuntime().addShutdownHook(new Thread(
-                () -> {
-                    Thread.currentThread().setName("ShutdownHook.recursiveDelete");
-                    try {
-                        Files.walkFileTree(path, new SimpleFileVisitor<>() {
-                            @Override
-                            public FileVisitResult visitFile(Path path,
-                                                             @SuppressWarnings("unused") BasicFileAttributes attrs)
-                                    throws IOException {
-                                Files.delete(path);
-                                return FileVisitResult.CONTINUE;
-                            }
-
-                            @Override
-                            public FileVisitResult postVisitDirectory(Path path, IOException e)
-                                    throws IOException {
-                                if (e == null) {
-                                    Files.delete(path);
-                                    return FileVisitResult.CONTINUE;
-                                }
-                                // directory iteration failed
-                                throw e;
-                            }
-                        });
-                    } catch (IOException e) {
-                        log.error("Failed to delete " + path, e);
-                    }
-                }));
-    }
-
-    /**
-     * List all files (not directories) in the given directory up to the specified depth.
-     *
-     * @param path  The directory to list files from
-     * @param depth The maximum depth to traverse
-     * @return A set of file names (not paths) in the directory
-     * @throws IOException if an I/O error occurs
-     */
-    public static Set<String> listFilesInDirectory(Path path, int depth) throws IOException {
-        try (Stream<Path> stream = Files.walk(path, depth)) {
-            return stream
-                    .filter(p -> !Files.isDirectory(p))
-                    .map(Path::getFileName)
-                    .map(Path::toString)
-                    .collect(Collectors.toSet());
+    public static boolean renameFile(Path oldPath, Path newPath) {
+        try {
+            Files.move(oldPath, newPath, StandardCopyOption.REPLACE_EXISTING);
+            applyDefaultPermissions(newPath);
+            return true;
+        } catch (IOException e) {
+            log.error("Failed to rename {} to {}", oldPath, newPath, e);
+            return false;
         }
     }
 
@@ -209,106 +349,38 @@ public class FileUtils {
     public static void writeToPath(String content, Path path) throws IOException {
         try {
             Files.writeString(path, content, StandardCharsets.UTF_8); // uses platform default charset
+            applyDefaultPermissions(path);
         } catch (IOException e) {
             log.warn("Could not write to file {}", path);
             throw e;
         }
     }
 
-    public static Optional<String> readFromFileIfPresent(Path path) {
+    public static void writeToPath(byte[] bytes, Path path) throws IOException {
         try {
-            return Optional.of(Files.readString(path));
+            Files.write(path, bytes); // uses platform default charset
+            applyDefaultPermissions(path);
         } catch (IOException e) {
-            return Optional.empty();
+            log.warn("Could not write to file {}", path);
+            throw e;
         }
     }
 
-    public static String readStringFromResource(String resourceName) throws IOException {
-        try (Scanner scanner = new Scanner(getResourceAsStream(resourceName))) {
-            return readFromScanner(scanner);
-        }
+    public static void copyFile(Path sourcePath, Path destinationPath) throws IOException {
+        Files.copy(sourcePath, destinationPath, StandardCopyOption.REPLACE_EXISTING);
+        applyDefaultPermissions(destinationPath);
     }
 
-    public static String readFromScanner(Scanner scanner) {
-        StringBuilder sb = new StringBuilder();
-        while (scanner.hasNextLine()) {
-            sb.append(scanner.nextLine());
-            if (scanner.hasNextLine()) {
-                sb.append(System.lineSeparator());
-            }
-        }
-        return sb.toString();
-    }
-
-    public static InputStream getResourceAsStream(String resourceName) throws IOException {
-        InputStream resource = FileUtils.class.getClassLoader().getResourceAsStream(resourceName);
-        if (resource == null) {
-            throw new IOException("Could not load " + resourceName);
-        }
-        return resource;
+    public static void inputStreamToFile(InputStream inputStream, Path destinationPath) throws IOException {
+        Files.copy(inputStream, destinationPath, StandardCopyOption.REPLACE_EXISTING);
+        applyDefaultPermissions(destinationPath);
     }
 
     public static void resourceToFile(String resourceName, Path outputPath) throws IOException {
         try (InputStream resource = getResourceAsStream(resourceName)) {
             Files.deleteIfExists(outputPath);
             Files.copy(resource, outputPath, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    public static void copyFile(Path sourcePath, Path destinationPath) throws IOException {
-        Files.copy(sourcePath, destinationPath, StandardCopyOption.REPLACE_EXISTING);
-    }
-
-    public static void copy(InputStream inputStream, OutputStream outputStream) throws IOException {
-        inputStream.transferTo(outputStream);
-    }
-
-    public static Set<String> listRegularFiles(Path dirPath) {
-        if (Files.notExists(dirPath)) {
-            return new HashSet<>();
-        }
-        try (Stream<Path> stream = Files.list(dirPath)) {
-            return stream
-                    .filter(Files::isRegularFile)
-                    .map(Path::getFileName)
-                    .map(Path::toString)
-                    .collect(Collectors.toSet());
-        } catch (IOException e) {
-            log.error(e.toString(), e);
-            return new HashSet<>();
-        }
-    }
-
-    public static Set<String> listDirectories(Path dirPath) {
-        if (Files.notExists(dirPath)) {
-            return new HashSet<>();
-        }
-        try (Stream<Path> stream = Files.list(dirPath)) {
-            return stream
-                    .filter(Files::isDirectory)
-                    .map(Path::getFileName)
-                    .map(Path::toString)
-                    .collect(Collectors.toSet());
-        } catch (IOException e) {
-            log.error(e.toString(), e);
-            return new HashSet<>();
-        }
-    }
-
-    /**
-     * Rename (move) a file from oldPath to newPath. If newPath exists, it will be replaced.
-     *
-     * @param oldPath The current path of the file
-     * @param newPath The new path of the file
-     * @return true if the file was successfully renamed, false otherwise
-     */
-    public static boolean renameFile(Path oldPath, Path newPath) {
-        try {
-            Files.move(oldPath, newPath, StandardCopyOption.REPLACE_EXISTING);
-            return true;
-        } catch (IOException e) {
-            log.error("Failed to rename {} to {}", oldPath, newPath, e);
-            return false;
+            applyDefaultPermissions(outputPath);
         }
     }
 
@@ -316,47 +388,44 @@ public class FileUtils {
             throws IOException {
         if (Files.exists(storageFilePath)) {
             Path corruptedBackupDirPath = dirPath.resolve(backupFolderName);
-            Files.createDirectories(corruptedBackupDirPath);
+            createRestrictedDirectories(corruptedBackupDirPath);
             String timestamp = String.valueOf(System.currentTimeMillis());
             String newFileName = fileName + "_at_" + timestamp;
             Path targetPath = dirPath.resolve(backupFolderName).resolve(newFileName);
             Files.move(storageFilePath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            applyDefaultPermissions(targetPath);
         }
     }
 
-    public static HttpURLConnection downloadFile(URL url,
-                                                 Path destinationPath,
-                                                 Observable<Double> progress) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        int fileSize;
-        try {
-            connection.connect();
-            try (InputStream inputStream = new BufferedInputStream(connection.getInputStream());
-                 OutputStream outputStream = Files.newOutputStream(destinationPath)) {
-                // If server does not provide contentLength it is -1
-                fileSize = connection.getContentLength();
-                double totalReadBytes = 0d;
-                byte[] buffer = new byte[1024];
-                int bytesRead;
-                while ((bytesRead = inputStream.read(buffer)) != -1) {
-                    outputStream.write(buffer, 0, bytesRead);
-                    if (fileSize != -1) {
-                        totalReadBytes += bytesRead;
-                        progress.set(totalReadBytes / fileSize);
-                    }
-                }
-                if (fileSize == -1) {
-                    progress.set(1d);
+    public static OutputStream newRestrictedOutputStream(Path filePath) throws IOException {
+        if (IS_POSIX) {
+            if (!Files.exists(filePath)) {
+                Files.createFile(filePath, OWNER_READ_WRITE_PERMISSIONS_FILE_ATTRIBUTE);
+            } else {
+                try {
+                    applyDefaultPermissions(filePath);
+                } catch (UnsupportedOperationException e) {
+                    // Non-POSIX FS — safe to ignore or log
                 }
             }
-        } finally {
-            connection.disconnect();
         }
-        return connection;
+        return Files.newOutputStream(filePath);
     }
 
-    public static boolean hasResourceFile(String fileName) {
-        return FileUtils.class.getClassLoader().getResource(fileName) != null;
+    public static void createRestrictedDirectories(Path path) throws IOException {
+        if (IS_POSIX) {
+            Files.createDirectories(path, OWNER_READ_WRITE_EXECUTE_PERMISSIONS_FILE_ATTRIBUTE);
+        } else {
+            Files.createDirectories(path);
+        }
+    }
+
+    public static void createRestrictedDirectory(Path path) throws IOException {
+        if (IS_POSIX) {
+            Files.createDirectory(path, OWNER_READ_WRITE_EXECUTE_PERMISSIONS_FILE_ATTRIBUTE);
+        } else {
+            Files.createDirectory(path);
+        }
     }
 
     public static void copyDirectory(Path sourceDirPath,
@@ -380,6 +449,7 @@ public class FileUtils {
                     Path destinationPath = destinationDirPath.resolve(relativePath);
                     try {
                         Files.copy(source, destinationPath);
+                        applyDefaultPermissions(destinationPath);
                     } catch (IOException e) {
                         exception.set(e);
                     }
@@ -388,53 +458,6 @@ public class FileUtils {
         }
         if (exception.get() != null) {
             throw exception.get();
-        }
-    }
-
-    public static Set<String> listResources(String resourceDir) throws IOException, URISyntaxException {
-        // Resource paths always use forward slashes on all OS.
-        String normalized = resourceDir.replace('\\', '/');
-        if (!normalized.endsWith("/")) {
-            normalized = normalized + "/";
-        }
-        URL dirURL = FileUtils.class.getClassLoader().getResource(normalized);
-        if (dirURL == null) {
-            throw new IOException("Resource directory not found: " + normalized);
-        }
-        String protocol = dirURL.getProtocol();
-        if ("file".equals(protocol)) {
-            Path dirPath = Path.of(dirURL.toURI());
-            if (!Files.isDirectory(dirPath)) {
-                throw new IOException("Resource path is not a directory: " + dirPath);
-            }
-            try (Stream<Path> stream = Files.walk(dirPath)) {
-                return stream
-                        .filter(Files::isRegularFile)
-                        .map(path -> dirPath.relativize(path).toString().replace(File.separatorChar, '/'))
-                        .collect(Collectors.toSet());
-            }
-        } else if ("jar".equals(protocol)) {
-            String jarUrlPath = dirURL.getPath();
-            int bangIndex = jarUrlPath.indexOf('!');
-            String jarFilePath = jarUrlPath.substring(0, bangIndex);
-            if (jarFilePath.startsWith("file:")) {
-                jarFilePath = jarFilePath.substring(5);
-            }
-            jarFilePath = URLDecoder.decode(jarFilePath, StandardCharsets.UTF_8);
-            Set<String> resourceFiles = new HashSet<>();
-            try (JarFile jar = new JarFile(jarFilePath)) {
-                Enumeration<JarEntry> entries = jar.entries();
-                while (entries.hasMoreElements()) {
-                    JarEntry entry = entries.nextElement();
-                    String name = entry.getName();
-                    if (!entry.isDirectory() && name.startsWith(normalized)) {
-                        resourceFiles.add(name.substring(normalized.length()));
-                    }
-                }
-            }
-            return resourceFiles;
-        } else {
-            throw new IOException("Unsupported URL protocol: " + protocol);
         }
     }
 
@@ -452,13 +475,27 @@ public class FileUtils {
             try {
                 Path parentPath = targetFilePath.getParent();
                 if (parentPath != null) {
-                    Files.createDirectories(parentPath);
+                    createRestrictedDirectories(parentPath);
                 }
                 FileUtils.resourceToFile(resourcePath, targetFilePath);
             } catch (IOException e) {
                 log.error("Could not copy resource {} to {}", resourcePath, targetFilePath, e);
                 throw e;
             }
+        }
+    }
+
+    private static void applyDefaultPermissions(Path path) throws IOException {
+        try {
+            if (IS_POSIX) {
+                if (Files.isDirectory(path)) {
+                    Files.setPosixFilePermissions(path, OWNER_READ_WRITE_EXECUTE_PERMISSIONS);
+                } else {
+                    Files.setPosixFilePermissions(path, OWNER_READ_WRITE_PERMISSIONS);
+                }
+            }
+        } catch (UnsupportedOperationException e) {
+            // Non-POSIX FS — safe to ignore or log
         }
     }
 }

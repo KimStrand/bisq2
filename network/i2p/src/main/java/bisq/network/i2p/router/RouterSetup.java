@@ -17,6 +17,7 @@
 
 package bisq.network.i2p.router;
 
+import bisq.common.file.FileUtils;
 import bisq.common.file.PropertiesReader;
 import bisq.common.logging.LogSetup;
 import bisq.network.i2p.router.utils.I2PLogLevel;
@@ -219,7 +220,7 @@ public class RouterSetup {
 
     private Path createDirectory(Path parent, String child) throws IOException {
         Path dirPath = parent.resolve(child);
-        Files.createDirectories(dirPath);
+        FileUtils.createRestrictedDirectories(dirPath);
         return dirPath;
     }
 }

@@ -15,19 +15,26 @@
  * along with Bisq. If not, see <http://www.gnu.org/licenses/>.
  */
 
-package bisq.common.file;
+package bisq.common.logging;
 
-import java.nio.file.FileSystems;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.rolling.RollingFileAppender;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
-import java.util.Set;
 
-public class FileWriteUtils {
-
-    private static final boolean IS_POSIX = FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
-
-    private static final Set<PosixFilePermission> OWNER_READ_WRITE_PERMISSIONS =
-            EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
-    private static final Set<PosixFilePermission> OWNER_READ_WRITE_EXECUTE_PERMISSIONS =
-            EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE);
+public class RestrictedRollingFileAppender extends RollingFileAppender<ILoggingEvent> {
+    @Override
+    public void openFile(String fileName) throws IOException {
+        super.openFile(fileName);
+        try {
+            Files.setPosixFilePermissions(Paths.get(fileName),
+                    EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+        } catch (UnsupportedOperationException e) {
+            // For non-posix file systems, we ignore this exception
+        }
+    }
 }

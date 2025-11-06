@@ -289,7 +289,7 @@ public class BackupService {
         String formattedDate = DATE_FORMAT.format(localDateTime);
         String fileNamePath = fileName + "_" + formattedDate;
         Path backupFilePath = dirPath.resolve(fileNamePath);
-        Files.createDirectories(dirPath);
+        FileUtils.createRestrictedDirectories(dirPath);
         return backupFilePath;
     }
 

@@ -94,8 +94,8 @@ public class PgPUtilsTest {
         Path filePath = Path.of("temp", fileName);
         try {
             try (InputStream resource = FileUtils.getResourceAsStream(fileName);
-                 OutputStream out = Files.newOutputStream(filePath)) {
-                FileUtils.copy(resource, out);
+                 OutputStream out = FileUtils.newRestrictedOutputStream(filePath)) {
+                resource.transferTo(out);
             }
             return PgPUtils.readPgpPublicKeyRing(filePath);
         } finally {
@@ -107,8 +107,8 @@ public class PgPUtilsTest {
         Path filePath = Path.of("temp", fileName);
         try {
             try (InputStream resource = FileUtils.getResourceAsStream(fileName);
-                 OutputStream out = Files.newOutputStream(filePath)) {
-                FileUtils.copy(resource, out);
+                 OutputStream out = FileUtils.newRestrictedOutputStream(filePath)) {
+                resource.transferTo(out);
             }
             return PgPUtils.readPgpSignature(filePath);
         } finally {
@@ -120,8 +120,8 @@ public class PgPUtilsTest {
         Path filePath = Path.of("temp", fileName);
         try {
             try (InputStream resource = FileUtils.getResourceAsStream(fileName)) {
-                OutputStream out = Files.newOutputStream(filePath);
-                FileUtils.copy(resource, out);
+                OutputStream out = FileUtils.newRestrictedOutputStream(filePath);
+                resource.transferTo(out);
             }
             return filePath;
         } finally {
