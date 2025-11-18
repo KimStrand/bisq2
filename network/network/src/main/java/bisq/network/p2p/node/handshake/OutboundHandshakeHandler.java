@@ -85,6 +85,11 @@ public class OutboundHandshakeHandler extends HandshakeHandler {
     @Override
     public void channelActive(ChannelHandlerContext context) throws Exception {
         log.error("channelActive");
+        // If there's a Socks5ProxyHandler in the pipeline, wait for ProxyConnectionEvent before starting the handshake.
+        // Otherwise start the handshake immediately (direct connection).
+        if (context.pipeline().get(Socks5ProxyHandler.class) == null) {
+            start(context);
+        }
         super.channelActive(context);
     }
 

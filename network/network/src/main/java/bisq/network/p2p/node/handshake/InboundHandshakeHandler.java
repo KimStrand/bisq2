@@ -54,9 +54,9 @@ public class InboundHandshakeHandler extends HandshakeHandler {
     }
 
     @Override
-    public void channelActive(ChannelHandlerContext context) {
+    public void channelActive(ChannelHandlerContext context) throws Exception {
         log.error("channelActive");
-
+        super.channelActive(context);
     }
 
     @Override
