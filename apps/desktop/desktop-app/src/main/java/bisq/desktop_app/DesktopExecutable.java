@@ -29,7 +29,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Nullable;
 import java.util.Arrays;
-import java.util.Map;
 
 import static bisq.common.platform.PlatformUtils.EXIT_FAILURE;
 
@@ -146,12 +145,6 @@ public class DesktopExecutable extends Executable<DesktopApplicationService> {
     private void exitJavaFXPlatform() {
         log.info("Exiting JavaFX Platform");
         try {
-            Map<Thread, StackTraceElement[]> threads = Thread.getAllStackTraces();
-            System.out.println("=== Aktive Threads vor dem Beenden ===");
-            for (Thread t : threads.keySet()) {
-                System.out.println("Thread: " + t.getName() + " | Daemon: " + t.isDaemon() + " | Alive: " + t.isAlive());
-            }
-            System.out.println("=====================");
             Platform.exit();
         } catch (Exception e) {
             log.error("Platform.exit failed", e);
