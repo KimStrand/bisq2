@@ -66,6 +66,9 @@ public class TorTransportService implements TransportService {
     @Getter
     public final ObservableHashMap<NetworkId, Long> initializedServerSocketTimestampByNetworkId = new ObservableHashMap<>();
 
+    private final EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+    private final EventLoopGroup workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+
     public TorTransportService(TransportConfig config) {
         socketTimeout = config.getSocketTimeout();
         if (torService == null) {
@@ -88,12 +91,24 @@ public class TorTransportService implements TransportService {
     public CompletableFuture<Boolean> shutdown() {
         log.info("shutdown");
         setTransportState(TransportState.STOPPING);
-        return torService.shutdown()
+
+        CompletableFuture<Void> bossGroupShutdown = new CompletableFuture<>();
+        bossGroup.shutdownGracefully().addListener(future ->
+                bossGroupShutdown.complete(null)
+        );
+
+        CompletableFuture<Void> workerGroupShutdown = new CompletableFuture<>();
+        workerGroup.shutdownGracefully().addListener(future ->
+                workerGroupShutdown.complete(null)
+        );
+
+        CompletableFuture<Void> groupsShutdown = CompletableFuture.allOf(bossGroupShutdown, workerGroupShutdown);
+
+        // When both groups are done, shutdown torService
+        return groupsShutdown
+                .thenCompose(v -> torService.shutdown())
                 .whenComplete((result, throwable) -> setTransportState(TransportState.TERMINATED));
     }
-
-    private final EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
-    private final EventLoopGroup workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
 
     @Override
     public CompletableFuture<Address> startNettyServer(NetworkId networkId,

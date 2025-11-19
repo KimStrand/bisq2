@@ -109,6 +109,9 @@ public class ClearNetTransportService implements TransportService {
     @Getter
     public final ObservableHashMap<NetworkId, Long> initializedServerSocketTimestampByNetworkId = new ObservableHashMap<>();
 
+    private final EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+    private final EventLoopGroup workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+
     public ClearNetTransportService(TransportConfig config) {
         socketTimeout = config.getSocketTimeout();
         connectTimeoutMs = ((Config) config).getConnectTimeoutMs();
@@ -139,6 +142,7 @@ public class ClearNetTransportService implements TransportService {
 
     @Override
     public CompletableFuture<Boolean> shutdown() {
+        log.info("shutdown");
         if (!initializeCalled) {
             return CompletableFuture.completedFuture(true);
         }
@@ -147,12 +151,22 @@ public class ClearNetTransportService implements TransportService {
         initializeServerSocketTimestampByNetworkId.clear();
         initializedServerSocketTimestampByNetworkId.clear();
         timestampByTransportState.clear();
-        setTransportState(TransportState.TERMINATED);
-        return CompletableFuture.completedFuture(true);
-    }
 
-    private final EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
-    private final EventLoopGroup workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+        CompletableFuture<Void> bossGroupShutdown = new CompletableFuture<>();
+        bossGroup.shutdownGracefully().addListener(future ->
+                bossGroupShutdown.complete(null)
+        );
+
+        CompletableFuture<Void> workerGroupShutdown = new CompletableFuture<>();
+        workerGroup.shutdownGracefully().addListener(future ->
+                workerGroupShutdown.complete(null)
+        );
+
+        // Return a future that completes when BOTH are done
+        return workerGroupShutdown
+                .thenCombine(workerGroupShutdown, (b1, b2) -> true)
+                .whenComplete((result, throwable) -> setTransportState(TransportState.TERMINATED));
+    }
 
     @Override
     public CompletableFuture<Address> startNettyServer(NetworkId networkId,
@@ -190,7 +204,8 @@ public class ClearNetTransportService implements TransportService {
     }
 
     @Override
-    public CompletableFuture<Channel> connect(Address address, Supplier<OutboundHandshakeHandler> handshakeHandlerSupplier) {
+    public CompletableFuture<Channel> connect(Address address,
+                                              Supplier<OutboundHandshakeHandler> handshakeHandlerSupplier) {
         CompletableFuture<Channel> future = new CompletableFuture<>();
         Bootstrap bootstrap = new Bootstrap();
         bootstrap.group(workerGroup)
