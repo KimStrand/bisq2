@@ -54,7 +54,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.EOFException;
 import java.io.IOException;
 import java.net.ConnectException;
-import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
@@ -331,7 +330,6 @@ public class Node implements Connection.Handler {
         }
     }
 
-
     /* --------------------------------------------------------------------- */
     // Connection
     /* --------------------------------------------------------------------- */
@@ -344,10 +342,6 @@ public class Node implements Connection.Handler {
         } else {
             return createOutboundConnectionAsync(address);
         }
-    }
-
-    public boolean hasConnection(Address address) {
-        return outboundConnectionsByAddress.containsKey(address) || inboundConnectionsByAddress.containsKey(address);
     }
 
     public Optional<Connection> findConnection(Connection connection) {
@@ -367,7 +361,6 @@ public class Node implements Connection.Handler {
             return Optional.empty();
         }
     }
-
 
     /* --------------------------------------------------------------------- */
     // OutboundConnection
@@ -469,46 +462,6 @@ public class Node implements Connection.Handler {
                 });
 
         return future;
-    }
-
-    private ConnectionHandshake.Result startConnectionHandshakeOld(Address address,
-                                                                   Socket socket,
-                                                                   Capability myCapability) {
-        ConnectionHandshake connectionHandshake = null;
-        try {
-            connectionHandshake = new ConnectionHandshake(socket,
-                    banList,
-                    myCapability,
-                    authorizationService,
-                    keyBundle);
-
-            connectionHandshakes.put(connectionHandshake.getId(), connectionHandshake);
-            log.debug("Outbound handshake started: Initiated by {} to {}", myCapability.getAddress(), address);
-            ConnectionHandshake.Result result = connectionHandshake.start(networkLoadSnapshot.getCurrentNetworkLoad(), address);
-            log.debug("Outbound handshake completed: Initiated by {} to {}", myCapability.getAddress(), address);
-
-            if (!address.isClearNetAddress()) {
-                // For clearnet this check doesn't make sense because:
-                // - the peer binds to 127.0.0.1, therefore reports 127.0.0.1 in the handshake
-                // - we use the peer's public IP to connect to him
-                checkArgument(address.equals(result.getPeersCapability().getAddress()),
-                        "Peers reported address must match address we used to connect");
-            }
-            return result;
-        } catch (Exception exception) {
-            log.error("Starting outbound handshake to {} failed. {}", address, exception.getMessage());
-            try {
-                socket.close();
-            } catch (IOException ignore) {
-            }
-            handleException(exception);
-            throw new ConnectionException(ConnectionException.Reason.HANDSHAKE_FAILED, exception);
-        } finally {
-            if (connectionHandshake != null) {
-                connectionHandshake.shutdown();
-                connectionHandshakes.remove(connectionHandshake.getId());
-            }
-        }
     }
 
     public Stream<Connection> getAllConnections() {
