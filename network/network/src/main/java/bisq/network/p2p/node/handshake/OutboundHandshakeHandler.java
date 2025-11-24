@@ -84,7 +84,6 @@ public class OutboundHandshakeHandler extends HandshakeHandler {
 
     @Override
     public void channelActive(ChannelHandlerContext context) throws Exception {
-        log.error("channelActive");
         // If there's a Socks5ProxyHandler in the pipeline, wait for ProxyConnectionEvent before starting the handshake.
         // Otherwise start the handshake immediately (direct connection).
         if (context.pipeline().get(Socks5ProxyHandler.class) == null) {
@@ -98,7 +97,6 @@ public class OutboundHandshakeHandler extends HandshakeHandler {
             ConnectionMetrics connectionMetrics = new ConnectionMetrics();
 
             Address myAddress = myCapability.getAddress();
-            log.error("myAddress {}", myAddress);
             long signatureDate = System.currentTimeMillis();
             Optional<byte[]> signature = OnionAddressValidation.sign(myAddress, peerAddress, signatureDate, myKeyBundle.getTorKeyPair().getPrivateKey());
 
@@ -118,14 +116,7 @@ public class OutboundHandshakeHandler extends HandshakeHandler {
             NetworkEnvelope requestNetworkEnvelope = new NetworkEnvelope(token, request);
             ts = System.currentTimeMillis();
 
-           /* ByteBuf buf = context.alloc().buffer();
-            buf.writeBytes(requestNetworkEnvelope.completeProto().toByteArray());
-            context.writeAndFlush(buf);*/
-
-            // context.writeAndFlush(Unpooled.wrappedBuffer("hello".getBytes(StandardCharsets.UTF_8)));
-
             context.writeAndFlush(requestNetworkEnvelope.completeProto());
-            log.error("sent {}", request);
             connectionMetrics.onSent(requestNetworkEnvelope, System.currentTimeMillis() - ts);
         } catch (Exception e) {
             //  networkEnvelopeSocket.close();

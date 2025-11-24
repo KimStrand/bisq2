@@ -55,13 +55,11 @@ public class InboundHandshakeHandler extends HandshakeHandler {
 
     @Override
     public void channelActive(ChannelHandlerContext context) throws Exception {
-        log.error("channelActive");
         super.channelActive(context);
     }
 
     @Override
     protected void channelRead0(ChannelHandlerContext context, bisq.network.protobuf.NetworkEnvelope proto) {
-        log.error("channelRead0 {}", proto);
         try {
             if (proto == null) {
                 throw new ConnectionException(PROTOBUF_IS_NULL, "NetworkEnvelope protobuf is null");

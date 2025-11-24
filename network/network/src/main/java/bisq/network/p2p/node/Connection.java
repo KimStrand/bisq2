@@ -144,13 +144,6 @@ public abstract class Connection {
             @Override
             protected void channelRead0(ChannelHandlerContext ctx, bisq.network.protobuf.NetworkEnvelope proto) {
                 try {
-                    long readTs = 0;
-                    if (readTs != 0) {
-                        log.debug("Processing message took {} ms. Wait for new message from {}. ", System.currentTimeMillis() - readTs, getPeerAddress());
-                    } else {
-                        log.debug("Wait for new message from {}", getPeerAddress());
-                    }
-                    readTs = System.currentTimeMillis();
                     if (proto == null) {
                         log.info("Proto from networkEnvelopeSocket.receiveNextEnvelope() is null. " +
                                 "This is expected if the input stream has reached EOF. We shut down the connection.");
@@ -163,11 +156,6 @@ public abstract class Connection {
                         return;
                     }
 
-                    //connectionThrottle.throttleReceiveMessage();
-                    // ThrottleReceiveMessage can cause a delay by Thread.sleep
-                       /* if (!isActive()) {
-                            return;
-                        }*/
                     long ts = System.currentTimeMillis();
                     NetworkEnvelope networkEnvelope = NetworkEnvelope.fromProto(proto);
 
