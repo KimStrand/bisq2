@@ -18,6 +18,7 @@
 package bisq.persistence;
 
 import bisq.common.file.FileMutatorUtils;
+import bisq.persistence.backup.RestoreService;
 import com.google.protobuf.Any;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,11 +33,13 @@ import java.util.Optional;
 public class PersistableStoreReaderWriter<T extends PersistableStore<T>> {
 
     private final PersistableStoreFileManager storeFileManager;
+    private final RestoreService restoreService;
     private final Path storeFilePath;
     private final Path parentDirectoryPath;
 
-    public PersistableStoreReaderWriter(PersistableStoreFileManager storeFileManager) {
+    public PersistableStoreReaderWriter(PersistableStoreFileManager storeFileManager, RestoreService restoreService) {
         this.storeFileManager = storeFileManager;
+        this.restoreService = restoreService;
         this.storeFilePath = storeFileManager.getStoreFilePath();
         this.parentDirectoryPath = storeFilePath.getParent();
     }
@@ -59,6 +62,10 @@ public class PersistableStoreReaderWriter<T extends PersistableStore<T>> {
         } catch (Exception e) {
             log.error("Couldn't read {} from file.", storeFilePath, e);
             tryToBackupCorruptedStoreFile();
+
+            // iterate over backups and try to read from the first valid one
+//            return restoreService.tryToRestoreFromBackup();
+
         }
 
         return Optional.empty();

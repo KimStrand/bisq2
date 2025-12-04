@@ -18,6 +18,7 @@
 package bisq.persistence;
 
 import bisq.common.proto.ProtoResolver;
+import bisq.persistence.backup.RestoreService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -33,7 +34,7 @@ public class PersistableStoreReaderWriterTests {
     void readNotExistingStore(@TempDir Path tempDirPath) {
         Path storageFilePath = tempDirPath.resolve("protoFile");
         var storeFileManager = new PersistableStoreFileManager(storageFilePath);
-        var persistableStoreReaderWriter = new PersistableStoreReaderWriter<TimestampStore>(storeFileManager);
+        var persistableStoreReaderWriter = new PersistableStoreReaderWriter<TimestampStore>(storeFileManager, new RestoreService());
 
         Optional<TimestampStore> optionalTimestampStore = persistableStoreReaderWriter.read();
         assertThat(optionalTimestampStore).isEmpty();
@@ -52,7 +53,7 @@ public class PersistableStoreReaderWriterTests {
 
         Path storageFilePath = tempDirPath.resolve("protoFile");
         var storeFileManager = new PersistableStoreFileManager(storageFilePath);
-        var persistableStoreReaderWriter = new PersistableStoreReaderWriter<TimestampStore>(storeFileManager);
+        var persistableStoreReaderWriter = new PersistableStoreReaderWriter<TimestampStore>(storeFileManager, new RestoreService());
         persistableStoreReaderWriter.write(timestampStore);
 
         Optional<TimestampStore> readOptionalStore = persistableStoreReaderWriter.read();
@@ -76,7 +77,7 @@ public class PersistableStoreReaderWriterTests {
 
         Path storageFilePath = tempDirPath.resolve("protoFile");
         var storeFileManager = new PersistableStoreFileManager(storageFilePath);
-        var persistableStoreReaderWriter = new PersistableStoreReaderWriter<TimestampStore>(storeFileManager);
+        var persistableStoreReaderWriter = new PersistableStoreReaderWriter<TimestampStore>(storeFileManager, new RestoreService());
         persistableStoreReaderWriter.write(timestampStore);
 
         // Triggers rename
