@@ -146,7 +146,7 @@ public class BackupService {
 
         // TODO Consider to let that run in a background thread
         accumulatedFileSize = 0;
-        List<BackupFileInfo> backupFileInfoList = getBackups(dirPath, fileName);
+        List<BackupFileInfo> backupFileInfoList = getBackups();
         LocalDateTime now = LocalDateTime.now();
         List<BackupFileInfo> outdatedBackupFileInfos = findOutdatedBackups(new ArrayList<>(backupFileInfoList), now, this::isMaxFileSizeReached);
         outdatedBackupFileInfos.forEach(backupFileInfo -> {
@@ -219,7 +219,7 @@ public class BackupService {
 //        Set<String> fileNames = FileReaderUtils.listRegularFiles(dirPath);
 //        createBackupFileInfo(fileName, fileNames)
 //                .forEach(this::addAndGetAccumulatedFileSize);
-        getBackups(dirPath, fileName)
+        getBackups()
                 .forEach(this::addAndGetAccumulatedFileSize);
         return accumulatedFileSize;
     }
@@ -244,6 +244,10 @@ public class BackupService {
         return fileSizeByBackupFileInfo.get(key);
     }
 
+    public List<BackupFileInfo> getBackups() {
+        Set<Path> paths = FileReaderUtils.listRegularFilesAsPath(dirPath);
+        return createBackupFileInfo(fileName, paths);
+    }
 
     /* --------------------------------------------------------------------- */
     // Utils
@@ -292,12 +296,6 @@ public class BackupService {
         Path backupFilePath = dirPath.resolve(fileNamePath);
         FileMutatorUtils.createRestrictedDirectories(dirPath);
         return backupFilePath;
-    }
-
-    @VisibleForTesting
-    static List<BackupFileInfo> getBackups(Path dirPath, String fileName) {
-        Set<Path> paths = FileReaderUtils.listRegularFilesAsPath(dirPath);
-        return createBackupFileInfo(fileName, paths);
     }
 
     @VisibleForTesting

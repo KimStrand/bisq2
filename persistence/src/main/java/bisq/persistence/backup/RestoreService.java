@@ -20,18 +20,49 @@ package bisq.persistence.backup;
 import bisq.persistence.PersistableStore;
 import lombok.extern.slf4j.Slf4j;
 
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.List;
+import java.util.NavigableSet;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.function.Function;
 
 @Slf4j
 public class RestoreService {
 
+    private final ConcurrentSkipListSet<BackupFileInfo> restoredBackpuFileInfos = new ConcurrentSkipListSet<>();
+
     public RestoreService() {
-        log.info("RestoreService initialized");
     }
 
-    public <T extends PersistableStore<T>> Optional<T> tryToRestoreFromBackup() {
-        // Implementation of restore from backup logic goes here
-        log.info("RestoreService: Attempting to restore from backup...");
+    public NavigableSet<BackupFileInfo> getRestoredBackupFileInfos() {
+        return Collections.unmodifiableNavigableSet(restoredBackpuFileInfos);
+    }
+
+    public <T extends PersistableStore<T>> Optional<T> tryToRestoreFromBackup(
+            List<BackupFileInfo> backupFileInfoList,
+            Function<Path, Optional<T>> storeReaderFunction) {
+        if (backupFileInfoList == null || backupFileInfoList.isEmpty()) {
+            log.info("No backup files available for restoration.");
+            return Optional.empty();
+        }
+
+        for (BackupFileInfo backupFileInfo : backupFileInfoList) {
+            Path backupPath = backupFileInfo.getPath();
+            log.info("Trying to restore from backup file {}", backupPath);
+            try {
+                Optional<T> optionalStore = storeReaderFunction.apply(backupPath);
+                if (optionalStore.isPresent()) {
+                    log.info("Successfully restored from backup file {}", backupPath);
+                    restoredBackpuFileInfos.add(backupFileInfo);
+                    return optionalStore;
+                }
+            } catch (Exception e) {
+                log.warn("Failed to read backup {}: {}", backupPath, e.getMessage(), e);
+            }
+        }
+
         return Optional.empty();
     }
 }

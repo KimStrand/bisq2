@@ -54,21 +54,7 @@ public class PersistableStoreReaderWriter<T extends PersistableStore<T>> {
         // have been written only once like the user identity.
         storeFileManager.maybeMigrateLegacyBackupFile();
 
-        try {
-            PersistableStore<?> persistableStore = readStoreFromFile();
-            //noinspection unchecked,rawtypes
-            return (Optional) Optional.of(persistableStore);
-
-        } catch (Exception e) {
-            log.error("Couldn't read {} from file.", storeFilePath, e);
-            tryToBackupCorruptedStoreFile();
-
-            // iterate over backups and try to read from the first valid one
-//            return restoreService.tryToRestoreFromBackup();
-
-        }
-
-        return Optional.empty();
+        return readStoreFromFileOrRestoreFromBackup();
     }
 
     public synchronized void write(T persistableStore) {
@@ -91,23 +77,52 @@ public class PersistableStoreReaderWriter<T extends PersistableStore<T>> {
         storeFileManager.pruneBackups();
     }
 
-    private PersistableStore<?> readStoreFromFile() throws IOException {
-        try (InputStream fileInputStream = Files.newInputStream(storeFilePath)) {
+    private Optional<T> readStoreFromFileOrRestoreFromBackup() {
+        Optional<T> optionalStore = readStore(storeFilePath);
+        if (optionalStore.isPresent()) {
+            return optionalStore;
+        } else {
+            return restoreService.tryToRestoreFromBackup(storeFileManager.getBackups(), this::readStore);
+        }
+    }
+
+    private Optional<T> readStore(Path path) {
+        try {
+            PersistableStore<?> persistableStore = readStoreFromFile(path);
+
+            // copy to main store file path if read from backup, because in case of a corrupted main file the main folder would not contain any file at all
+            if (path != storeFilePath) {
+                log.info("Copy content to storeFilePath");
+                FileMutatorUtils.copyFile(path, storeFilePath);
+            }
+
+            //noinspection unchecked,rawtypes
+            return (Optional) Optional.of(persistableStore);
+
+        } catch (Exception e) {
+            log.error("Couldn't read {} from file.", path, e);
+            tryToBackupCorruptedStoreFile(path);
+        }
+        return Optional.empty();
+    }
+
+    private PersistableStore<?> readStoreFromFile(Path path) throws IOException {
+        try (InputStream fileInputStream = Files.newInputStream(path)) {
             Any any = Any.parseDelimitedFrom(fileInputStream);
             return PersistableStore.fromAny(any);
         }
     }
 
-    private void tryToBackupCorruptedStoreFile() {
+    private void tryToBackupCorruptedStoreFile(Path pathToBackup) {
         try {
             FileMutatorUtils.backupCorruptedFile(
                     parentDirectoryPath,
-                    storeFilePath,
-                    storeFilePath.getFileName().toString(),
+                    pathToBackup,
+                    pathToBackup.getFileName().toString(),
                     "corruptedFilesAtRead"
             );
         } catch (IOException e) {
-            log.error("Error trying to backup corrupted file {}: {}", storeFilePath, e.getMessage(), e);
+            log.error("Error trying to backup corrupted file {}: {}", pathToBackup, e.getMessage(), e);
         }
     }
 

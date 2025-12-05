@@ -482,8 +482,9 @@ public class BackupServiceTest {
 
     @Test
     void testGetBackupsReadsDirectoryAndReturnsParsedBackups(@TempDir Path tempDir) throws IOException {
-        Path testDir = tempDir.resolve("getBackupsTest");
-        Files.createDirectories(testDir);
+        Path dbDirPath = tempDir.resolve("db");
+        Path storePath = dbDirPath.resolve("test_store.protobuf");
+//        Files.createDirectories(dbDirPath);
 
         List<String> fileNames = List.of(
                 "test_store.protobuf_2025-12-04_0901",
@@ -492,12 +493,16 @@ public class BackupServiceTest {
                 ".DS_Store"
         );
 
+        Path backupPathDir = tempDir.resolve("backups").resolve("test");
+        Files.createDirectories(backupPathDir);
+
         // create files on disk
         for (String fn : fileNames) {
-            Files.writeString(testDir.resolve(fn), "dummy", StandardCharsets.UTF_8);
+            Files.writeString(backupPathDir.resolve(fn), "dummy text", StandardCharsets.UTF_8);
         }
 
-        List<BackupFileInfo> backups = BackupService.getBackups(testDir, "test_store.protobuf");
+        BackupService bs = new BackupService(tempDir, storePath, MaxBackupSize.HUNDRED_MB);
+        List<BackupFileInfo> backups = bs.getBackups();
 
         // Only the two valid backup files should be returned, newest first
         assertEquals(2, backups.size());
