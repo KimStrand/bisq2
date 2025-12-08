@@ -19,6 +19,9 @@ package bisq.network.p2p.node.envelope;
 
 import bisq.common.network.PeerSocket;
 import bisq.network.p2p.message.NetworkEnvelope;
+import com.google.common.io.ByteStreams;
+import com.google.protobuf.CodedInputStream;
+import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.Closeable;
@@ -26,8 +29,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 @Slf4j
 public class NetworkEnvelopeSocket implements Closeable {
+    private final static int MAX_ALLOWED_SIZE = 2_250_000;
+    private final static int MAX_RECURSION_LIMIT = 20;
     private final PeerSocket socket;
     private final InputStream inputStream;
     private final OutputStream outputStream;
@@ -43,8 +50,54 @@ public class NetworkEnvelopeSocket implements Closeable {
         outputStream.flush();
     }
 
+    /**
+     * Reads the next NetworkEnvelope from the stream with comprehensive protection:
+     * - Validates varint size prefix (max 5 bytes)
+     * - Enforces message size limit
+     * - Limits stream to exact declared bytes
+     * - Protects against malformed protobufs
+     * - Prevents recursion attacks
+     *
+     * @return NetworkEnvelope or null if EOF
+     * @throws IOException framing errors (malformed varint)
+     * @throws IllegalArgumentException invalid size
+     * @throws InvalidProtocolBufferException malformed protobuf payload
+     */
     public bisq.network.protobuf.NetworkEnvelope receiveNextEnvelope() throws IOException {
-        return bisq.network.protobuf.NetworkEnvelope.parseDelimitedFrom(inputStream);
+        int firstByte = inputStream.read();
+        if (firstByte == -1) {
+            return null; // EOF
+        }
+
+        // Read and validate the varint size prefix
+        int size;
+        try {
+            // This will throw InvalidProtocolBufferException if varint > 5 bytes
+            size = CodedInputStream.readRawVarint32(firstByte, inputStream);
+        } catch (InvalidProtocolBufferException e) {
+            throw new IOException("Malformed varint size prefix (possibly > 5 bytes): " + e.getMessage(), e);
+        }
+
+        checkArgument(size > 0, "Size of protobuf message must not be 0");
+        checkArgument(size <= MAX_ALLOWED_SIZE, "Size of protobuf message exceeds our limit. size=" + size);
+
+        // This prevents reading beyond the declared message boundary
+        InputStream limitedStream = ByteStreams.limit(inputStream, size);
+
+        try {
+            CodedInputStream codedInput = CodedInputStream.newInstance(limitedStream);
+            codedInput.setRecursionLimit(MAX_RECURSION_LIMIT);
+
+            bisq.network.protobuf.NetworkEnvelope envelope = bisq.network.protobuf.NetworkEnvelope.parseFrom(codedInput);
+            codedInput.checkLastTagWas(0);
+
+            return envelope;
+
+        } catch (InvalidProtocolBufferException e) {
+            throw new InvalidProtocolBufferException(
+                    "Failed to parse NetworkEnvelope: " + e.getMessage()
+            );
+        }
     }
 
     @Override
