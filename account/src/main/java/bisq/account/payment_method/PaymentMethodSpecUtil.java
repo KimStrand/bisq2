@@ -80,18 +80,18 @@ public class PaymentMethodSpecUtil {
     }
 
     public static List<PaymentMethodSpec<?>> createPaymentMethodSpecs(List<PaymentMethod<?>> paymentMethods,
-                                                                      Market market) {
-        String currencyCode = market.isCrypto() ? market.getBaseCurrencyCode() : market.getQuoteCurrencyCode();
-        return createPaymentMethodSpecs(paymentMethods, currencyCode);
-    }
-
-    public static List<PaymentMethodSpec<?>> createPaymentMethodSpecs(List<PaymentMethod<?>> paymentMethods,
                                                                       String currencyCode) {
         if (Asset.isFiat(currencyCode)) {
             return paymentMethods.stream()
                     .filter(e -> e instanceof FiatPaymentMethod)
                     .map(e -> (FiatPaymentMethod) e)
                     .map(FiatPaymentMethodSpec::new)
+                    .collect(Collectors.toList());
+        } else if (Asset.isBtc(currencyCode)) {
+            return paymentMethods.stream()
+                    .filter(e -> e instanceof BitcoinPaymentMethod)
+                    .map(e -> (BitcoinPaymentMethod) e)
+                    .map(BitcoinPaymentMethodSpec::new)
                     .collect(Collectors.toList());
         } else if (Asset.isAltcoin(currencyCode)) {
             return paymentMethods.stream()
@@ -108,6 +108,8 @@ public class PaymentMethodSpecUtil {
                                                                String currencyCode) {
         if (Asset.isFiat(currencyCode) && paymentMethod instanceof FiatPaymentMethod fiatPaymentMethod) {
             return new FiatPaymentMethodSpec(fiatPaymentMethod);
+        } else if (Asset.isBtc(currencyCode) && paymentMethod instanceof BitcoinPaymentMethod bitcoinPaymentMethod) {
+            return new BitcoinPaymentMethodSpec(bitcoinPaymentMethod);
         } else if (Asset.isAltcoin(currencyCode) && paymentMethod instanceof CryptoPaymentMethod cryptoPaymentMethod) {
             return new CryptoPaymentMethodSpec(cryptoPaymentMethod);
         } else {
@@ -120,6 +122,26 @@ public class PaymentMethodSpecUtil {
             return FiatPaymentMethodSpec.class;
         } else if (market.isCrypto()) {
             return CryptoPaymentMethodSpec.class;
+        } else {
+            throw new IllegalArgumentException("Unsupported market type: " + market);
+        }
+    }
+
+    public static Class<? extends PaymentMethodSpec<?>> getPaymentMethodSpecClassForBaseSide(Market market) {
+        if (market.isBtcFiatMarket()) {
+            return BitcoinPaymentMethodSpec.class;
+        } else if (market.isCrypto()) {
+            return CryptoPaymentMethodSpec.class;
+        } else {
+            throw new IllegalArgumentException("Unsupported market type: " + market);
+        }
+    }
+
+    public static Class<? extends PaymentMethodSpec<?>> getPaymentMethodSpecClassForQuoteSide(Market market) {
+        if (market.isBtcFiatMarket()) {
+            return FiatPaymentMethodSpec.class;
+        } else if (market.isCrypto()) {
+            return BitcoinPaymentMethodSpec.class;
         } else {
             throw new IllegalArgumentException("Unsupported market type: " + market);
         }
