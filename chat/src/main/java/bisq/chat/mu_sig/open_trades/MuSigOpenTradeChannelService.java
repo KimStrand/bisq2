@@ -189,11 +189,31 @@ public class MuSigOpenTradeChannelService extends PrivateGroupChatChannelService
     }
 
     public void addMediatorsResponseMessage(MuSigOpenTradeChannel channel, String text) {
-        setIsInMediation(channel, true);
+        addMediationCaseStateMessage(channel, text, true);
+    }
+
+    public void addMediationCaseStateMessage(MuSigOpenTradeChannel channel, String text, boolean isInMediation) {
+        setIsInMediation(channel, isInMediation);
         checkArgument(channel.getMediator().isPresent());
+        addLocalProtocolLogMessage(channel, channel.getMediator().orElseThrow(), text);
+    }
+
+    public void addMediationResultAcceptanceMessageFromMyself(MuSigOpenTradeChannel channel, String text) {
+        addLocalProtocolLogMessage(channel, channel.getMyUserIdentity().getUserProfile(), text);
+    }
+
+    public void addMediationResultAcceptanceMessageFromPeer(MuSigOpenTradeChannel channel, String text) {
+        addLocalProtocolLogMessage(channel, channel.getPeer(), text);
+    }
+
+    public void addMediationResultAcceptanceMessageFromTrader(MuSigOpenTradeChannel channel, UserProfile trader, String text) {
+        addLocalProtocolLogMessage(channel, trader, text);
+    }
+
+    private void addLocalProtocolLogMessage(MuSigOpenTradeChannel channel, UserProfile senderUserProfile, String text) {
         UserProfile receiverUserProfile = channel.getMyUserIdentity().getUserProfile();
-        UserProfile senderUserProfile = channel.getMediator().get();
-        MuSigOpenTradeMessage tradeLogMessage = new MuSigOpenTradeMessage(channel.getTradeId(),
+        MuSigOpenTradeMessage tradeLogMessage = new MuSigOpenTradeMessage(
+                channel.getTradeId(),
                 StringUtils.createUid(),
                 channel.getId(),
                 senderUserProfile,

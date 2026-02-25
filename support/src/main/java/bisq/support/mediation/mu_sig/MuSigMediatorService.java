@@ -107,6 +107,8 @@ public class MuSigMediatorService extends RateLimitedPersistenceClient<MuSigMedi
     public void onMessage(EnvelopePayloadMessage envelopePayloadMessage) {
         if (envelopePayloadMessage instanceof MuSigMediationRequest) {
             processMediationRequest((MuSigMediationRequest) envelopePayloadMessage);
+        } else if (envelopePayloadMessage instanceof MuSigMediationResultAcceptanceMessage) {
+            processMediationResultAcceptanceMessage((MuSigMediationResultAcceptanceMessage) envelopePayloadMessage);
         }
     }
 
@@ -125,10 +127,18 @@ public class MuSigMediatorService extends RateLimitedPersistenceClient<MuSigMedi
     }
 
     public void closeMediationCase(MuSigMediationCase muSigMediationCase, MuSigMediationResult muSigMediationResult) {
-        boolean resultChanged = muSigMediationCase.setMuSigMediationResult(muSigMediationResult);
+        Optional<MuSigMediationResult> existingResult = muSigMediationCase.getMuSigMediationResult().get();
+        MuSigMediationResult resultToUse = existingResult.orElse(muSigMediationResult);
+        if (existingResult.isPresent() && !existingResult.orElseThrow().equals(muSigMediationResult)) {
+            log.warn("Ignoring changed MuSigMediationResult for trade {} because result cannot be changed once set.",
+                    muSigMediationCase.getMuSigMediationRequest().getTradeId());
+        }
+
+        boolean resultChanged = muSigMediationCase.setMuSigMediationResult(resultToUse);
         boolean stateChanged = muSigMediationCase.setMediationCaseState(MediationCaseState.CLOSED);
         if (resultChanged || stateChanged) {
             persist();
+            sendMediationCaseStateMessage(muSigMediationCase, Optional.of(resultToUse));
         }
     }
 
@@ -140,12 +150,20 @@ public class MuSigMediatorService extends RateLimitedPersistenceClient<MuSigMedi
     public void reOpenMediationCase(MuSigMediationCase muSigMediationCase) {
         if (muSigMediationCase.setMediationCaseState(MediationCaseState.RE_OPENED)) {
             persist();
+            sendMediationCaseStateMessage(muSigMediationCase, Optional.empty());
         }
     }
 
     public void closeReOpenedMediationCase(MuSigMediationCase muSigMediationCase) {
+        Optional<MuSigMediationResult> existingResult = muSigMediationCase.getMuSigMediationResult().get();
+        if (existingResult.isEmpty()) {
+            log.warn("Cannot close re-opened mediation case for trade {} because MuSigMediationResult is missing.",
+                    muSigMediationCase.getMuSigMediationRequest().getTradeId());
+            return;
+        }
         if (muSigMediationCase.setMediationCaseState(MediationCaseState.CLOSED)) {
             persist();
+            sendMediationCaseStateMessage(muSigMediationCase, existingResult);
         }
     }
 
@@ -217,5 +235,51 @@ public class MuSigMediatorService extends RateLimitedPersistenceClient<MuSigMedi
     private void addNewMediationCase(MuSigMediationCase muSigMediationCase) {
         getMediationCases().add(muSigMediationCase);
         persist();
+    }
+
+    private void processMediationResultAcceptanceMessage(MuSigMediationResultAcceptanceMessage message) {
+        muSigOpenTradeChannelService.findChannelByTradeId(message.getTradeId())
+                .ifPresent(channel -> {
+                    if (!channel.isMediator()) {
+                        return;
+                    }
+                    channel.getTraders().stream()
+                            .filter(trader -> trader.getId().equals(message.getSenderUserProfileId()))
+                            .findFirst()
+                            .ifPresentOrElse(sender -> {
+                                        String key = message.isMediationResultAccepted()
+                                                ? "muSig.trade.mediationResult.acceptance.acceptedByTrader"
+                                                : "muSig.trade.mediationResult.acceptance.rejectedByTrader";
+                                        muSigOpenTradeChannelService.addMediationResultAcceptanceMessageFromTrader(
+                                                channel,
+                                                sender,
+                                                Res.encode(key, sender.getUserName()));
+                                    },
+                                    () -> log.warn("Ignoring MuSigMediationResultAcceptanceMessage with unknown sender {} for trade {}.",
+                                            message.getSenderUserProfileId(), message.getTradeId()));
+                });
+    }
+
+    private void sendMediationCaseStateMessage(MuSigMediationCase muSigMediationCase,
+                                               Optional<MuSigMediationResult> muSigMediationResult) {
+        MuSigMediationRequest muSigMediationRequest = muSigMediationCase.getMuSigMediationRequest();
+        MediationCaseState mediationCaseState = muSigMediationCase.getMediationCaseState().get();
+        findMyMediatorUserIdentity(muSigMediationRequest.getContract().getMediator())
+                .ifPresent(myUserIdentity -> {
+                    NetworkIdWithKeyPair networkIdWithKeyPair = myUserIdentity.getNetworkIdWithKeyPair();
+                    MuSigMediationStateMessage message = new MuSigMediationStateMessage(
+                            muSigMediationRequest.getTradeId(),
+                            mediationCaseState,
+                            muSigMediationResult
+                    );
+
+                    networkService.confidentialSend(message,
+                            muSigMediationRequest.getRequester().getNetworkId(),
+                            networkIdWithKeyPair);
+
+                    networkService.confidentialSend(message,
+                            muSigMediationRequest.getPeer().getNetworkId(),
+                            networkIdWithKeyPair);
+                });
     }
 }

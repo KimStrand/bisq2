@@ -54,6 +54,7 @@ public final class MuSigTradeParty extends TradeParty {
     private Optional<CloseTradeResponse> myCloseTradeResponse = Optional.empty();
     private Optional<ByteArray> peersOutputPrvKeyShare = Optional.empty();
     private Optional<AccountPayload<?>> accountPayload = Optional.empty();
+    private Optional<Boolean> mediationResultAcceptance = Optional.empty();
 
     public MuSigTradeParty(NetworkId networkId) {
         super(networkId);
@@ -72,7 +73,8 @@ public final class MuSigTradeParty extends TradeParty {
                            Optional<SwapTxSignature> peersSwapTxSignature,
                            Optional<CloseTradeResponse> myCloseTradeResponse,
                            Optional<ByteArray> peersOutputPrvKeyShare,
-                           Optional<AccountPayload<?>> accountPayload) {
+                           Optional<AccountPayload<?>> accountPayload,
+                           Optional<Boolean> mediationResultAcceptance) {
         super(networkId);
 
         this.myPubKeySharesResponse = myPubKeySharesResponse;
@@ -88,6 +90,7 @@ public final class MuSigTradeParty extends TradeParty {
         this.myCloseTradeResponse = myCloseTradeResponse;
         this.peersOutputPrvKeyShare = peersOutputPrvKeyShare;
         this.accountPayload = accountPayload;
+        this.mediationResultAcceptance = mediationResultAcceptance;
     }
 
     @Override
@@ -106,6 +109,7 @@ public final class MuSigTradeParty extends TradeParty {
         myCloseTradeResponse.ifPresent(e -> builder.setMyCloseTradeResponse(e.toProto(serializeForHash)));
         peersOutputPrvKeyShare.ifPresent(e -> builder.setPeersOutputPrvKeyShare(e.toProto(serializeForHash)));
         accountPayload.ifPresent(e -> builder.setAccountPayload(e.toProto(serializeForHash)));
+        mediationResultAcceptance.ifPresent(builder::setMediationResultAcceptance);
         return getTradePartyBuilder(serializeForHash).setMuSigTradeParty(builder);
     }
 
@@ -151,6 +155,9 @@ public final class MuSigTradeParty extends TradeParty {
                         : Optional.empty(),
                 muSigTradePartyProto.hasAccountPayload()
                         ? Optional.of(AccountPayload.fromProto(muSigTradePartyProto.getAccountPayload()))
+                        : Optional.empty(),
+                muSigTradePartyProto.hasMediationResultAcceptance()
+                        ? Optional.of(muSigTradePartyProto.getMediationResultAcceptance())
                         : Optional.empty()
         );
     }
@@ -205,5 +212,13 @@ public final class MuSigTradeParty extends TradeParty {
 
     public void setAccountPayload(AccountPayload<?> accountPayload) {
         this.accountPayload = Optional.of(accountPayload);
+    }
+
+    public boolean setMediationResultAcceptance(boolean mediationResultAcceptance) {
+        if (this.mediationResultAcceptance.isPresent()) {
+            return false;
+        }
+        this.mediationResultAcceptance = Optional.of(mediationResultAcceptance);
+        return true;
     }
 }
