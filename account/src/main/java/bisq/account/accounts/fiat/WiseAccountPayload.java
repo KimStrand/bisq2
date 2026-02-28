@@ -123,10 +123,10 @@ public final class WiseAccountPayload extends AccountPayload<FiatPaymentMethod> 
     }
 
     @Override
-    public byte[] getFingerprint() {
+    public byte[] getBisq1CompatibleFingerprint() {
         byte[] data = ByteArrayUtils.concat(email.getBytes(StandardCharsets.UTF_8),
                 holderName.getBytes(StandardCharsets.UTF_8));
-        // We do not call super.getFingerprint(data) to not include the countryCode to stay compatible with
+        // We do not call super.getBisq1CompatibleFingerprint(data) to not include the countryCode to stay compatible with
         // Bisq 1 account age fingerprint.
         String paymentMethodId = getBisq1CompatiblePaymentMethodId();
         return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);

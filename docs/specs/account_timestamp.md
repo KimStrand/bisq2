@@ -89,7 +89,7 @@ The fingerprint is salted with the per-account `salt` from `AccountPayload` to p
 
 ### Inputs
 
-* `fingerprint`: `AccountPayload.getFingerprint()`
+* `fingerprint`: `AccountPayload.getBisq1CompatibleFingerprint()`
 * `salt`: `AccountPayload.getSalt()` (32 bytes)
 * `publicKeyBytes`: public key bound to the account
 

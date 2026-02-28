@@ -158,7 +158,7 @@ public abstract class BankAccountPayload extends CountryBasedAccountPayload impl
     }
 
     @Override
-    public byte[] getFingerprint() {
+    public byte[] getBisq1CompatibleFingerprint() {
         String bankNameValue = BankAccountUtils.isBankNameRequired(countryCode) ? bankName.orElse("") : "";
         String bankIdValue = BankAccountUtils.isBankIdRequired(countryCode) ? bankId.orElse("") : "";
         String branchIdValue = BankAccountUtils.isBranchIdRequired(countryCode) ? branchId.orElse("") : "";
@@ -182,6 +182,6 @@ public abstract class BankAccountPayload extends CountryBasedAccountPayload impl
                 accountTypeValue +
                 holderIdValue +
                 nationalAccountIdValue;
-        return super.getFingerprint(all.getBytes(StandardCharsets.UTF_8));
+        return super.getBisq1CompatibleFingerprint(all.getBytes(StandardCharsets.UTF_8));
     }
 }

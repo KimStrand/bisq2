@@ -99,7 +99,7 @@ public final class OtherCryptoAssetAccountPayload extends CryptoAssetAccountPayl
     }
 
     @Override
-    public byte[] getFingerprint() {
-        return super.getFingerprint(new byte[]{});
+    public byte[] getBisq1CompatibleFingerprint() {
+        return super.getBisq1CompatibleFingerprint(new byte[]{});
     }
 }

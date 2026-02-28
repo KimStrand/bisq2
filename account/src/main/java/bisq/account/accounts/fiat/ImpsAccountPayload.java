@@ -31,7 +31,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 @Getter
 @Slf4j
@@ -116,7 +115,7 @@ public final class ImpsAccountPayload extends CountryBasedAccountPayload impleme
     }
 
     @Override
-    public byte[] getFingerprint() {
-        return super.getFingerprint(accountNr.getBytes(StandardCharsets.UTF_8));
+    public byte[] getBisq1CompatibleFingerprint() {
+        return super.getBisq1CompatibleFingerprint(accountNr.getBytes(StandardCharsets.UTF_8));
     }
 }

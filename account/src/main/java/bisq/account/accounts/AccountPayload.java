@@ -45,7 +45,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * AccountPayload is sent over the wire to the peer during the trade process. It is not used in the offer.
@@ -100,9 +99,9 @@ public abstract class AccountPayload<M extends PaymentMethod<?>> implements Netw
         };
     }
 
-    public abstract byte[] getFingerprint();
+    public abstract byte[] getBisq1CompatibleFingerprint();
 
-    protected byte[] getFingerprint(byte[] data) {
+    protected byte[] getBisq1CompatibleFingerprint(byte[] data) {
         // paymentMethodId must match Bisq 1 paymentMethodId to support imported Bisq 1 accounts and account age
         String paymentMethodId = getBisq1CompatiblePaymentMethodId();
         return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);

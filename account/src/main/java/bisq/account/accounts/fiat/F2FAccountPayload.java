@@ -30,7 +30,6 @@ import bisq.i18n.Res;
 import lombok.Getter;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 @Getter
 public final class F2FAccountPayload extends CountryBasedAccountPayload implements SelectableCurrencyAccountPayload {
@@ -136,9 +135,9 @@ public final class F2FAccountPayload extends CountryBasedAccountPayload implemen
     }
 
     @Override
-    public byte[] getFingerprint() {
+    public byte[] getBisq1CompatibleFingerprint() {
         byte[] data = ByteArrayUtils.concat(contact.getBytes(StandardCharsets.UTF_8),
                 city.getBytes(StandardCharsets.UTF_8));
-        return super.getFingerprint(data);
+        return super.getBisq1CompatibleFingerprint(data);
     }
 }

@@ -281,8 +281,8 @@ public final class SwiftAccountPayload extends CountryBasedAccountPayload implem
     }
 
     @Override
-    public byte[] getFingerprint() {
-        // We do not call super.getFingerprint(data) to not include the countryCode to stay compatible with
+    public byte[] getBisq1CompatibleFingerprint() {
+        // We do not call super.getBisq1CompatibleFingerprint(data) to not include the countryCode to stay compatible with
         // Bisq 1 account age fingerprint.
         String paymentMethodId = getBisq1CompatiblePaymentMethodId();
         return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8),

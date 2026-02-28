@@ -33,7 +33,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 @Getter
 @Slf4j
@@ -108,10 +107,10 @@ public final class MercadoPagoAccountPayload extends AccountPayload<FiatPaymentM
     }
 
     @Override
-    public byte[] getFingerprint() {
+    public byte[] getBisq1CompatibleFingerprint() {
         byte[] data = ByteArrayUtils.concat(COUNTRY_CODE.getBytes(StandardCharsets.UTF_8),
                 holderId.getBytes(StandardCharsets.UTF_8),
                 holderName.getBytes(StandardCharsets.UTF_8));
-        return super.getFingerprint(data);
+        return super.getBisq1CompatibleFingerprint(data);
     }
 }

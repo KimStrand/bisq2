@@ -34,7 +34,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Optional;
 
 @Getter
 @Slf4j
@@ -109,7 +108,7 @@ public final class PerfectMoneyAccountPayload extends AccountPayload<FiatPayment
     }
 
     @Override
-    public byte[] getFingerprint() {
-        return super.getFingerprint(accountNr.getBytes(StandardCharsets.UTF_8));
+    public byte[] getBisq1CompatibleFingerprint() {
+        return super.getBisq1CompatibleFingerprint(accountNr.getBytes(StandardCharsets.UTF_8));
     }
 }
