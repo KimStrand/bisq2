@@ -30,7 +30,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 @Getter
 @Slf4j
@@ -92,11 +91,19 @@ public final class PayIdAccountPayload extends CountryBasedAccountPayload implem
 
     @Override
     public byte[] getBisq1CompatibleFingerprint() {
-        byte[] data = (payId + holderName).getBytes(StandardCharsets.UTF_8);
+        String string = payId + holderName;
+        byte[] data = string.getBytes(StandardCharsets.UTF_8);
         // We do not call super.getBisq1CompatibleFingerprint(data) to not include the countryCode to stay compatible with
         // Bisq 1 account age fingerprint.
-        String paymentMethodId = getBisq1CompatiblePaymentMethodId();
-        return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
+        byte[] paymentMethodId = getBisq1CompatiblePaymentMethodId().getBytes(StandardCharsets.UTF_8);
+        return ByteArrayUtils.concat(paymentMethodId, data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        String string = payId + holderName;
+        byte[] data = string.getBytes(StandardCharsets.UTF_8);
+        return super.getBisq2Fingerprint(data);
     }
 
     @Override

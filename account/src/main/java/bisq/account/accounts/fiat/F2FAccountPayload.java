@@ -140,4 +140,11 @@ public final class F2FAccountPayload extends CountryBasedAccountPayload implemen
                 city.getBytes(StandardCharsets.UTF_8));
         return super.getBisq1CompatibleFingerprint(data);
     }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = ByteArrayUtils.concat(contact.getBytes(StandardCharsets.UTF_8),
+                city.getBytes(StandardCharsets.UTF_8));
+        return super.getBisq2Fingerprint(data);
+    }
 }

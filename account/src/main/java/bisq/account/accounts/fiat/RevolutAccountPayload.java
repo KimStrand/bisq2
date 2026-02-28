@@ -111,6 +111,13 @@ public final class RevolutAccountPayload extends AccountPayload<FiatPaymentMetho
 
     @Override
     public byte[] getBisq1CompatibleFingerprint() {
-        return super.getBisq1CompatibleFingerprint(userName.getBytes(StandardCharsets.UTF_8));
+        byte[] data = userName.getBytes(StandardCharsets.UTF_8);
+        return super.getBisq1CompatibleFingerprint(data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = userName.getBytes(StandardCharsets.UTF_8);
+        return super.getBisq2Fingerprint(data);
     }
 }

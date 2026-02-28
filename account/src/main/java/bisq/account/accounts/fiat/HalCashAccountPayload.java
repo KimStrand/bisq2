@@ -106,4 +106,10 @@ public final class HalCashAccountPayload extends CountryBasedAccountPayload impl
         String paymentMethodId = getBisq1CompatiblePaymentMethodId();
         return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
     }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = mobileNr.getBytes(StandardCharsets.UTF_8);
+        return super.getBisq2Fingerprint(data);
+    }
 }

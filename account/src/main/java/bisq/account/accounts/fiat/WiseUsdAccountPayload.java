@@ -125,7 +125,14 @@ public final class WiseUsdAccountPayload extends CountryBasedAccountPayload impl
 
     @Override
     public byte[] getBisq1CompatibleFingerprint() {
-        return super.getBisq1CompatibleFingerprint(holderName.getBytes(StandardCharsets.UTF_8));
+        byte[] data = holderName.getBytes(StandardCharsets.UTF_8);
+        return super.getBisq1CompatibleFingerprint(data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = holderName.getBytes(StandardCharsets.UTF_8);
+        return super.getBisq2Fingerprint(data);
     }
 
     @Override

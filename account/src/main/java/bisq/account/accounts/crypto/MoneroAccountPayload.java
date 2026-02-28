@@ -158,4 +158,10 @@ public final class MoneroAccountPayload extends CryptoAssetAccountPayload {
         String data = privateViewKey.orElse("");
         return super.getBisq1CompatibleFingerprint(data.getBytes(StandardCharsets.UTF_8));
     }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        String data = privateViewKey.orElse("");
+        return super.getBisq2Fingerprint(data.getBytes(StandardCharsets.UTF_8));
+    }
 }

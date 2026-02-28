@@ -155,4 +155,10 @@ public final class SepaAccountPayload extends CountryBasedAccountPayload impleme
         byte[] data = ByteArrayUtils.concat(iban.getBytes(StandardCharsets.UTF_8), bic.getBytes(StandardCharsets.UTF_8));
         return super.getBisq1CompatibleFingerprint(data);
     }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = ByteArrayUtils.concat(iban.getBytes(StandardCharsets.UTF_8), bic.getBytes(StandardCharsets.UTF_8));
+        return super.getBisq2Fingerprint(data);
+    }
 }

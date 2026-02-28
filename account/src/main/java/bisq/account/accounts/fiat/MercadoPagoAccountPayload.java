@@ -113,4 +113,12 @@ public final class MercadoPagoAccountPayload extends AccountPayload<FiatPaymentM
                 holderName.getBytes(StandardCharsets.UTF_8));
         return super.getBisq1CompatibleFingerprint(data);
     }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = ByteArrayUtils.concat(COUNTRY_CODE.getBytes(StandardCharsets.UTF_8),
+                holderId.getBytes(StandardCharsets.UTF_8),
+                holderName.getBytes(StandardCharsets.UTF_8));
+        return super.getBisq2Fingerprint(data);
+    }
 }

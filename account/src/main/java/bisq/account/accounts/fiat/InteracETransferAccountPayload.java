@@ -132,4 +132,12 @@ public final class InteracETransferAccountPayload extends CountryBasedAccountPay
         String paymentMethodId = getBisq1CompatiblePaymentMethodId();
         return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
     }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = ByteArrayUtils.concat(email.getBytes(StandardCharsets.UTF_8),
+                question.getBytes(StandardCharsets.UTF_8),
+                answer.getBytes(StandardCharsets.UTF_8));
+        return super.getBisq2Fingerprint(data);
+    }
 }

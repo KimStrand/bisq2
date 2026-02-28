@@ -126,4 +126,11 @@ public final class SbpAccountPayload extends CountryBasedAccountPayload implemen
         String paymentMethodId = getBisq1CompatiblePaymentMethodId();
         return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
     }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = ByteArrayUtils.concat(mobileNumber.getBytes(StandardCharsets.UTF_8),
+                bankName.getBytes(StandardCharsets.UTF_8));
+        return super.getBisq2Fingerprint(data);
+    }
 }
