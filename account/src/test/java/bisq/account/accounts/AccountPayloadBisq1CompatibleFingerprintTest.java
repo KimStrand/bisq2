@@ -26,7 +26,6 @@ import bisq.account.accounts.fiat.NeftAccountPayload;
 import bisq.account.accounts.fiat.PayIdAccountPayload;
 import bisq.account.accounts.fiat.PayseraAccountPayload;
 import bisq.account.accounts.fiat.PerfectMoneyAccountPayload;
-import bisq.account.accounts.fiat.Pin4AccountPayload;
 import bisq.account.accounts.fiat.PixAccountPayload;
 import bisq.account.accounts.fiat.PromptPayAccountPayload;
 import bisq.account.accounts.fiat.RevolutAccountPayload;
@@ -60,7 +59,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 @Slf4j
-public class AccountPayloadFingerprintTest {
+public class AccountPayloadBisq1CompatibleFingerprintTest {
     private static final byte[] SALT = new byte[32];
 
     @BeforeAll
@@ -403,12 +402,6 @@ public class AccountPayloadFingerprintTest {
         payload.verify();
         assertArrayEquals(expected("NATIONAL_BANK", "AR", "BankXYZ", "", "BRANCH", "1234567", "", "CUIT123", "CBU123"),
                 payload.getBisq1CompatibleFingerprint());
-    }
-
-    @Test
-    void pin4Fingerprint() {
-        Pin4AccountPayload payload = new Pin4AccountPayload("id", SALT, "+48123456789");
-        assertArrayEquals(expected("PIN_4", "PL", "+48123456789"), payload.getBisq1CompatibleFingerprint());
     }
 
     @Test
