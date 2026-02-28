@@ -128,10 +128,10 @@ public final class SbpAccountPayload extends CountryBasedAccountPayload implemen
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(
-                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                mobileNumber.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                bankName.getBytes(StandardCharsets.UTF_8)
+        byte[] data = joinWithSeparator(
+                holderName,
+                mobileNumber,
+                bankName
         );
         return super.getBisq2Fingerprint(data);
     }

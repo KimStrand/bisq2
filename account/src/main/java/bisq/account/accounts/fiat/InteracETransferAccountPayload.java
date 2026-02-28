@@ -134,11 +134,12 @@ public final class InteracETransferAccountPayload extends CountryBasedAccountPay
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(
-                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                email.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                question.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                answer.getBytes(StandardCharsets.UTF_8));
+        byte[] data = joinWithSeparator(
+                holderName,
+                email,
+                question,
+                answer
+        );
         return super.getBisq2Fingerprint(data);
     }
 }

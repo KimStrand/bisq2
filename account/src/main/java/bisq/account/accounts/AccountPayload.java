@@ -123,16 +123,31 @@ public abstract class AccountPayload<M extends PaymentMethod<?>> implements Netw
         return DigestUtil.hash(bytes);
     }
 
-    protected byte[] joinWithSeparator(List<String> values) {
-        if (values.isEmpty()) {
-            return new byte[]{};
-        }
-        byte[] result = values.get(0).getBytes(StandardCharsets.UTF_8);
-        for (int i = 1; i < values.size(); i++) {
-            result = ByteArrayUtils.concat(
-                    result, FINGERPRINT_SEPARATOR,
-                    values.get(i).getBytes(StandardCharsets.UTF_8)
-            );
+    /**
+     * Joins an array of strings into a single byte array, using a predefined separator
+     * between non-null and non-empty strings. Strings are converted to bytes using UTF-8 encoding.
+     *
+     * @param values An array of strings to be joined. Null or empty strings are ignored.
+     * @return A byte array resulting from the concatenation of the provided strings, separated by
+     *         a predefined byte sequence. Returns an empty byte array if all input strings are null or empty.
+     */
+    protected byte[] joinWithSeparator(String... values) {
+        byte[] result = new byte[]{};
+        boolean hasValue = false;
+        for (String value : values) {
+            if (value == null || value.isEmpty()) {
+                continue;
+            }
+            byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+            if (!hasValue) {
+                result = bytes;
+                hasValue = true;
+            } else {
+                result = ByteArrayUtils.concat(
+                        result, FINGERPRINT_SEPARATOR,
+                        bytes
+                );
+            }
         }
         return result;
     }

@@ -103,8 +103,10 @@ public final class USPostalMoneyOrderAccountPayload extends CountryBasedAccountP
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                postalAddress.getBytes(StandardCharsets.UTF_8));
+        byte[] data = joinWithSeparator(
+                holderName,
+                postalAddress
+        );
         return super.getBisq2Fingerprint(data);
     }
 }

@@ -137,18 +137,16 @@ public final class MoneyGramAccountPayload extends CountryBasedAccountPayload im
     public byte[] getBisq1CompatibleFingerprint() {
         String string = countryCode + state + holderName + email;
         byte[] data = string.getBytes(StandardCharsets.UTF_8);
-        // We do not call super.getBisq1CompatibleFingerprint(data) to not include the countryCode to stay compatible with
-        // Bisq 1 account age fingerprint.
         byte[] paymentMethodId = getBisq1CompatiblePaymentMethodId().getBytes(StandardCharsets.UTF_8);
         return ByteArrayUtils.concat(paymentMethodId, data);
     }
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(
-                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                email.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                state.getBytes(StandardCharsets.UTF_8)
+        byte[] data = joinWithSeparator(
+                holderName,
+                email,
+                state
         );
         return super.getBisq2Fingerprint(data);
     }

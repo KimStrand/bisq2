@@ -124,9 +124,9 @@ public final class MoneyBeamAccountPayload extends CountryBasedAccountPayload im
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(
-                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                emailOrMobileNr.getBytes(StandardCharsets.UTF_8)
+        byte[] data = joinWithSeparator(
+                holderName,
+                emailOrMobileNr
         );
         return super.getBisq2Fingerprint(data);
     }

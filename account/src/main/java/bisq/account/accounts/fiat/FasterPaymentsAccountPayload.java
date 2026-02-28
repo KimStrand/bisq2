@@ -117,10 +117,10 @@ public final class FasterPaymentsAccountPayload extends CountryBasedAccountPaylo
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(
-                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                sortCode.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                accountNr.getBytes(StandardCharsets.UTF_8)
+        byte[] data = joinWithSeparator(
+                holderName,
+                sortCode,
+                accountNr
         );
         return super.getBisq2Fingerprint(data);
     }

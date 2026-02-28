@@ -113,9 +113,10 @@ public final class PixAccountPayload extends CountryBasedAccountPayload implemen
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(
-                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
-                pixKey.getBytes(StandardCharsets.UTF_8));
+        byte[] data = joinWithSeparator(
+                holderName,
+                pixKey
+        );
         return super.getBisq2Fingerprint(data);
     }
 }
