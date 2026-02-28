@@ -36,7 +36,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @Getter
 @Slf4j
@@ -64,12 +63,12 @@ public final class SepaInstantAccountPayload extends CountryBasedAccountPayload 
     }
 
     public SepaInstantAccountPayload(String id,
-                                      byte[] salt,
-                                      String holderName,
-                                      String iban,
-                                      String bic,
-                                      String countryCode,
-                                      List<String> acceptedCountryCodes) {
+                                     byte[] salt,
+                                     String holderName,
+                                     String iban,
+                                     String bic,
+                                     String countryCode,
+                                     List<String> acceptedCountryCodes) {
         super(id, salt, countryCode);
         this.holderName = holderName;
         this.iban = iban;
@@ -142,8 +141,19 @@ public final class SepaInstantAccountPayload extends CountryBasedAccountPayload 
     }
 
     @Override
-    public byte[] getFingerprint() {
-        byte[] data = ByteArrayUtils.concat(iban.getBytes(StandardCharsets.UTF_8), bic.getBytes(StandardCharsets.UTF_8));
-        return super.getFingerprint(data);
+    public byte[] getBisq1CompatibleFingerprint() {
+        byte[] data = ByteArrayUtils.concat(iban.getBytes(StandardCharsets.UTF_8),
+                bic.getBytes(StandardCharsets.UTF_8));
+        return super.getBisq1CompatibleFingerprint(data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = joinWithSeparator(
+                holderName,
+                iban,
+                bic
+        );
+        return super.getBisq2Fingerprint(data);
     }
 }

@@ -20,6 +20,7 @@ package bisq.account.accounts.crypto;
 import bisq.account.accounts.util.AccountUtils;
 import bisq.account.payment_method.crypto.CryptoPaymentMethod;
 import bisq.common.asset.CryptoAssetRepository;
+import bisq.common.util.ByteArrayUtils;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
@@ -154,8 +155,26 @@ public final class MoneroAccountPayload extends CryptoAssetAccountPayload {
     }
 
     @Override
-    public byte[] getFingerprint() {
+    public byte[] getBisq1CompatibleFingerprint() {
         String data = privateViewKey.orElse("");
-        return super.getFingerprint(data.getBytes(StandardCharsets.UTF_8));
+        return super.getBisq1CompatibleFingerprint(data.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] mainAddressBytes = mainAddress
+                .map(e -> e.getBytes(StandardCharsets.UTF_8))
+                .orElse(new byte[]{});
+        byte[] privateViewKeyBytes = privateViewKey
+                .map(e -> e.getBytes(StandardCharsets.UTF_8))
+                .orElse(new byte[]{});
+
+        // We have the 2 fields mutually exclusive, but to not rely on that, we add a separator if both are present
+        byte[] separator = mainAddress.isPresent() && privateViewKey.isPresent()
+                ? FINGERPRINT_SEPARATOR
+                : new byte[]{};
+
+        byte[] data = ByteArrayUtils.concat(mainAddressBytes, separator, privateViewKeyBytes);
+        return super.getBisq2Fingerprint(data);
     }
 }

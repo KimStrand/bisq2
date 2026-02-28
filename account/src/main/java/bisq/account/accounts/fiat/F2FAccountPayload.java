@@ -30,7 +30,6 @@ import bisq.i18n.Res;
 import lombok.Getter;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 @Getter
 public final class F2FAccountPayload extends CountryBasedAccountPayload implements SelectableCurrencyAccountPayload {
@@ -61,12 +60,12 @@ public final class F2FAccountPayload extends CountryBasedAccountPayload implemen
     }
 
     public F2FAccountPayload(String id,
-                              byte[] salt,
-                              String countryCode,
-                              String selectedCurrencyCode,
-                              String city,
-                              String contact,
-                              String extraInfo) {
+                             byte[] salt,
+                             String countryCode,
+                             String selectedCurrencyCode,
+                             String city,
+                             String contact,
+                             String extraInfo) {
         super(id, salt, countryCode);
         this.selectedCurrencyCode = selectedCurrencyCode;
         this.city = city;
@@ -123,7 +122,7 @@ public final class F2FAccountPayload extends CountryBasedAccountPayload implemen
 
     @Override
     public String getDefaultAccountName() {
-        return getPaymentMethod().getShortDisplayString()+ "-" + countryCode + "-" + StringUtils.truncate(city, 4);
+        return getPaymentMethod().getShortDisplayString() + "-" + countryCode + "-" + StringUtils.truncate(city, 4);
     }
 
     @Override
@@ -136,9 +135,18 @@ public final class F2FAccountPayload extends CountryBasedAccountPayload implemen
     }
 
     @Override
-    public byte[] getFingerprint() {
+    public byte[] getBisq1CompatibleFingerprint() {
         byte[] data = ByteArrayUtils.concat(contact.getBytes(StandardCharsets.UTF_8),
                 city.getBytes(StandardCharsets.UTF_8));
-        return super.getFingerprint(data);
+        return super.getBisq1CompatibleFingerprint(data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = joinWithSeparator(
+                city,
+                contact
+        );
+        return super.getBisq2Fingerprint(data);
     }
 }

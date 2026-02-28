@@ -36,6 +36,7 @@ import bisq.common.proto.UnresolvableProtobufMessageException;
 import bisq.common.util.ByteArrayUtils;
 import bisq.common.util.StringUtils;
 import bisq.common.validation.NetworkDataValidation;
+import bisq.security.DigestUtil;
 import com.google.protobuf.ByteString;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -45,7 +46,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * AccountPayload is sent over the wire to the peer during the trade process. It is not used in the offer.
@@ -55,6 +55,9 @@ import java.util.Optional;
 @ToString
 @EqualsAndHashCode
 public abstract class AccountPayload<M extends PaymentMethod<?>> implements NetworkProto {
+    private static final byte[] FINGERPRINT_PREFIX = "BISQ2_FINGERPRINT".getBytes(StandardCharsets.UTF_8);
+    public static final byte[] FINGERPRINT_SEPARATOR = StringUtils.UNIT_SEPARATOR.getBytes(StandardCharsets.UTF_8);
+
     protected final String id;
     protected final byte[] salt; // 32 bytes
 
@@ -100,12 +103,53 @@ public abstract class AccountPayload<M extends PaymentMethod<?>> implements Netw
         };
     }
 
-    public abstract byte[] getFingerprint();
+    public abstract byte[] getBisq1CompatibleFingerprint();
 
-    protected byte[] getFingerprint(byte[] data) {
+    protected byte[] getBisq1CompatibleFingerprint(byte[] data) {
         // paymentMethodId must match Bisq 1 paymentMethodId to support imported Bisq 1 accounts and account age
         String paymentMethodId = getBisq1CompatiblePaymentMethodId();
         return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
+    }
+
+    public abstract byte[] getBisq2Fingerprint();
+
+    protected byte[] getBisq2Fingerprint(byte[] data) {
+        byte[] paymentMethodId = getPaymentMethodName().getBytes(StandardCharsets.UTF_8);
+        byte[] bytes = ByteArrayUtils.concat(
+                FINGERPRINT_PREFIX, FINGERPRINT_SEPARATOR,
+                paymentMethodId, FINGERPRINT_SEPARATOR,
+                data
+        );
+        return DigestUtil.hash(bytes);
+    }
+
+    /**
+     * Joins an array of strings into a single byte array, using a predefined separator
+     * between non-null and non-empty strings. Strings are converted to bytes using UTF-8 encoding.
+     *
+     * @param values An array of strings to be joined. Null or empty strings are ignored.
+     * @return A byte array resulting from the concatenation of the provided strings, separated by
+     *         a predefined byte sequence. Returns an empty byte array if all input strings are null or empty.
+     */
+    protected byte[] joinWithSeparator(String... values) {
+        byte[] result = new byte[]{};
+        boolean hasValue = false;
+        for (String value : values) {
+            if (value == null || value.isEmpty()) {
+                continue;
+            }
+            byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+            if (!hasValue) {
+                result = bytes;
+                hasValue = true;
+            } else {
+                result = ByteArrayUtils.concat(
+                        result, FINGERPRINT_SEPARATOR,
+                        bytes
+                );
+            }
+        }
+        return result;
     }
 
     protected String getBisq1CompatiblePaymentMethodId() {

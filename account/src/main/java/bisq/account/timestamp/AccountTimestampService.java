@@ -142,7 +142,7 @@ public class AccountTimestampService implements Service, DataService.Listener {
                                                          byte[] signature,
                                                          KeyAlgorithm keyAlgorithm) {
         try {
-            byte[] fingerprint = accountPayload.getFingerprint();
+            byte[] fingerprint = accountPayload.getBisq1CompatibleFingerprint();
             byte[] salt = accountPayload.getSalt();
             byte[] saltedFingerprint = ByteArrayUtils.concat(fingerprint, salt);
             verifyHash(saltedFingerprint, publicKey.getEncoded(), accountTimestamp);
@@ -234,7 +234,7 @@ public class AccountTimestampService implements Service, DataService.Listener {
 
     private static byte[] getSaltedFingerprint(AccountPayload<?> accountPayload) {
         byte[] salt = accountPayload.getSalt();
-        byte[] preimage = accountPayload.getFingerprint();
+        byte[] preimage = accountPayload.getBisq1CompatibleFingerprint();
         return ByteArrayUtils.concat(preimage, salt);
     }
 
@@ -245,7 +245,7 @@ public class AccountTimestampService implements Service, DataService.Listener {
         AccountPayload<?> accountPayload = account.getAccountPayload();
 
         byte[] salt = accountPayload.getSalt();
-        byte[] fingerprint = accountPayload.getFingerprint();
+        byte[] fingerprint = accountPayload.getBisq1CompatibleFingerprint();
         byte[] saltedFingerprint = ByteArrayUtils.concat(fingerprint, salt);
         byte[] preimage = ByteArrayUtils.concat(saltedFingerprint, publicKeyBytes);
         byte[] hash = DigestUtil.hash(preimage);

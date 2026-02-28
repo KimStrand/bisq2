@@ -32,7 +32,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -56,10 +55,10 @@ public final class MoneyBeamAccountPayload extends CountryBasedAccountPayload im
     }
 
     public MoneyBeamAccountPayload(String id,
-                                    byte[] salt,
-                                    String countryCode,
-                                    String holderName,
-                                    String emailOrMobileNr) {
+                                   byte[] salt,
+                                   String countryCode,
+                                   String holderName,
+                                   String emailOrMobileNr) {
         super(id, salt, countryCode);
         this.holderName = holderName;
         this.emailOrMobileNr = emailOrMobileNr;
@@ -114,12 +113,21 @@ public final class MoneyBeamAccountPayload extends CountryBasedAccountPayload im
     }
 
     @Override
-    public byte[] getFingerprint() {
+    public byte[] getBisq1CompatibleFingerprint() {
         byte[] data = ByteArrayUtils.concat(emailOrMobileNr.getBytes(StandardCharsets.UTF_8),
                 holderName.getBytes(StandardCharsets.UTF_8));
-        // We do not call super.getFingerprint(data) to not include the countryCode to stay compatible with
+        // We do not call super.getBisq1CompatibleFingerprint(data) to not include the countryCode to stay compatible with
         // Bisq 1 account age fingerprint.
         String paymentMethodId = getBisq1CompatiblePaymentMethodId();
         return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = joinWithSeparator(
+                holderName,
+                emailOrMobileNr
+        );
+        return super.getBisq2Fingerprint(data);
     }
 }

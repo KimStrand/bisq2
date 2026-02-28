@@ -24,6 +24,7 @@ import bisq.account.accounts.util.AccountUtils;
 import bisq.account.payment_method.fiat.FiatPaymentMethod;
 import bisq.account.payment_method.fiat.FiatPaymentRail;
 import bisq.account.payment_method.fiat.FiatPaymentRailUtil;
+import bisq.common.util.ByteArrayUtils;
 import bisq.common.util.StringUtils;
 import bisq.common.validation.PaymentAccountValidation;
 import bisq.i18n.Res;
@@ -34,7 +35,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -117,7 +117,17 @@ public final class MoneseAccountPayload extends AccountPayload<FiatPaymentMethod
     }
 
     @Override
-    public byte[] getFingerprint() {
-        return super.getFingerprint(holderName.getBytes(StandardCharsets.UTF_8));
+    public byte[] getBisq1CompatibleFingerprint() {
+        byte[] data = holderName.getBytes(StandardCharsets.UTF_8);
+        return super.getBisq1CompatibleFingerprint(data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = joinWithSeparator(
+                holderName,
+                mobileNr
+        );
+        return super.getBisq2Fingerprint(data);
     }
 }

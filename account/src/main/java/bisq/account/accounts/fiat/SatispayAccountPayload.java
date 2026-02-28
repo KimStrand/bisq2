@@ -33,7 +33,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -108,9 +107,18 @@ public final class SatispayAccountPayload extends AccountPayload<FiatPaymentMeth
     }
 
     @Override
-    public byte[] getFingerprint() {
+    public byte[] getBisq1CompatibleFingerprint() {
         byte[] data = ByteArrayUtils.concat(COUNTRY_CODE.getBytes(StandardCharsets.UTF_8),
                 holderName.getBytes(StandardCharsets.UTF_8));
-        return super.getFingerprint(data);
+        return super.getBisq1CompatibleFingerprint(data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = joinWithSeparator(
+                holderName,
+                mobileNr
+        );
+        return super.getBisq2Fingerprint(data);
     }
 }

@@ -33,7 +33,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -106,12 +105,21 @@ public final class ZelleAccountPayload extends CountryBasedAccountPayload implem
     }
 
     @Override
-    public byte[] getFingerprint() {
+    public byte[] getBisq1CompatibleFingerprint() {
         byte[] data = emailOrMobileNr.getBytes(StandardCharsets.UTF_8);
-        // We do not call super.getFingerprint(data) to not include the countryCode to stay compatible with
+        // We do not call super.getBisq1CompatibleFingerprint(data) to not include the countryCode to stay compatible with
         // Bisq 1 account age fingerprint.
-        String paymentMethodId = getBisq1CompatiblePaymentMethodId();
-        return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
+        byte[] paymentMethodId = getBisq1CompatiblePaymentMethodId().getBytes(StandardCharsets.UTF_8);
+        return ByteArrayUtils.concat(paymentMethodId, data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = joinWithSeparator(
+                holderName,
+                emailOrMobileNr
+        );
+        return super.getBisq2Fingerprint(data);
     }
 
     @Override

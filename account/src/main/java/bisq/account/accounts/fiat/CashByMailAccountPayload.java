@@ -32,7 +32,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 @Getter
 @Slf4j
@@ -118,9 +117,18 @@ public final class CashByMailAccountPayload extends AccountPayload<FiatPaymentMe
     }
 
     @Override
-    public byte[] getFingerprint() {
+    public byte[] getBisq1CompatibleFingerprint() {
         byte[] data = ByteArrayUtils.concat(contact.getBytes(StandardCharsets.UTF_8),
                 postalAddress.getBytes(StandardCharsets.UTF_8));
-        return super.getFingerprint(data);
+        return super.getBisq1CompatibleFingerprint(data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = joinWithSeparator(
+                postalAddress,
+                contact
+        );
+        return super.getBisq2Fingerprint(data);
     }
 }

@@ -30,7 +30,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -96,7 +95,14 @@ public final class BizumAccountPayload extends CountryBasedAccountPayload implem
     }
 
     @Override
-    public byte[] getFingerprint() {
-        return super.getFingerprint(mobileNr.getBytes(StandardCharsets.UTF_8));
+    public byte[] getBisq1CompatibleFingerprint() {
+        byte[] data = mobileNr.getBytes(StandardCharsets.UTF_8);
+        return super.getBisq1CompatibleFingerprint(data);
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
+        byte[] data = mobileNr.getBytes(StandardCharsets.UTF_8);
+        return super.getBisq2Fingerprint(data);
     }
 }

@@ -30,7 +30,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -97,10 +96,14 @@ public final class Pin4AccountPayload extends CountryBasedAccountPayload impleme
     }
 
     @Override
-    public byte[] getFingerprint() {
-        // As we don't have Pin4 in Bisq 1, we can use the getFingerprint method applying data from
-        // CountryBasedAccountPayload.
+    public byte[] getBisq1CompatibleFingerprint() {
+        // Not used in Bisq 1
+        return getBisq2Fingerprint();
+    }
+
+    @Override
+    public byte[] getBisq2Fingerprint() {
         byte[] data = mobileNr.getBytes(StandardCharsets.UTF_8);
-        return super.getFingerprint(data);
+        return super.getBisq2Fingerprint(data);
     }
 }
