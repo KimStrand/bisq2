@@ -107,6 +107,16 @@ public abstract class AccountPayload<M extends PaymentMethod<?>> implements Netw
         return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
     }
 
+    // If not overridden, we use the same as from Bisq 1
+    public byte[] getBisq2Fingerprint() {
+        return getBisq1CompatibleFingerprint();
+    }
+
+    protected byte[] getBisq2Fingerprint(byte[] data) {
+        String paymentMethodId = getPaymentMethodName();
+        return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
+    }
+
     protected String getBisq1CompatiblePaymentMethodId() {
         // In case Bisq 2 PaymentMethodName is different to Bisq 1, we can override it here to match the Bisq 1 ID to
         // not break account age verification.
