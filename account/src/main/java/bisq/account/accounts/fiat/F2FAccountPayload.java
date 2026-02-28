@@ -60,12 +60,12 @@ public final class F2FAccountPayload extends CountryBasedAccountPayload implemen
     }
 
     public F2FAccountPayload(String id,
-                              byte[] salt,
-                              String countryCode,
-                              String selectedCurrencyCode,
-                              String city,
-                              String contact,
-                              String extraInfo) {
+                             byte[] salt,
+                             String countryCode,
+                             String selectedCurrencyCode,
+                             String city,
+                             String contact,
+                             String extraInfo) {
         super(id, salt, countryCode);
         this.selectedCurrencyCode = selectedCurrencyCode;
         this.city = city;
@@ -122,7 +122,7 @@ public final class F2FAccountPayload extends CountryBasedAccountPayload implemen
 
     @Override
     public String getDefaultAccountName() {
-        return getPaymentMethod().getShortDisplayString()+ "-" + countryCode + "-" + StringUtils.truncate(city, 4);
+        return getPaymentMethod().getShortDisplayString() + "-" + countryCode + "-" + StringUtils.truncate(city, 4);
     }
 
     @Override
@@ -143,8 +143,10 @@ public final class F2FAccountPayload extends CountryBasedAccountPayload implemen
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(contact.getBytes(StandardCharsets.UTF_8),
-                city.getBytes(StandardCharsets.UTF_8));
+        byte[] data = ByteArrayUtils.concat(
+                city.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                contact.getBytes(StandardCharsets.UTF_8)
+        );
         return super.getBisq2Fingerprint(data);
     }
 }

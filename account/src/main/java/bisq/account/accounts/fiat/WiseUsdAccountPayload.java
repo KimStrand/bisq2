@@ -22,6 +22,7 @@ import bisq.account.accounts.util.AccountDataDisplayStringBuilder;
 import bisq.account.accounts.util.AccountUtils;
 import bisq.account.payment_method.fiat.FiatPaymentMethod;
 import bisq.account.payment_method.fiat.FiatPaymentRail;
+import bisq.common.util.ByteArrayUtils;
 import bisq.common.validation.EmailValidation;
 import bisq.common.validation.PaymentAccountValidation;
 import bisq.i18n.Res;
@@ -131,7 +132,10 @@ public final class WiseUsdAccountPayload extends CountryBasedAccountPayload impl
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = holderName.getBytes(StandardCharsets.UTF_8);
+        byte[] data = ByteArrayUtils.concat(
+                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                email.getBytes(StandardCharsets.UTF_8)
+        );
         return super.getBisq2Fingerprint(data);
     }
 

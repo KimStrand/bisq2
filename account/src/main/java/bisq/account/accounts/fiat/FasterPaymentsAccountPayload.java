@@ -31,7 +31,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 @Getter
 @Slf4j
@@ -47,10 +46,10 @@ public final class FasterPaymentsAccountPayload extends CountryBasedAccountPaylo
     }
 
     public FasterPaymentsAccountPayload(String id,
-                                         byte[] salt,
-                                         String holderName,
-                                         String sortCode,
-                                         String accountNr) {
+                                        byte[] salt,
+                                        String holderName,
+                                        String sortCode,
+                                        String accountNr) {
         super(id, salt, "GB");
         this.holderName = holderName;
         this.sortCode = sortCode;
@@ -118,8 +117,11 @@ public final class FasterPaymentsAccountPayload extends CountryBasedAccountPaylo
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(sortCode.getBytes(StandardCharsets.UTF_8),
-                accountNr.getBytes(StandardCharsets.UTF_8));
+        byte[] data = ByteArrayUtils.concat(
+                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                sortCode.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                accountNr.getBytes(StandardCharsets.UTF_8)
+        );
         return super.getBisq2Fingerprint(data);
     }
 }

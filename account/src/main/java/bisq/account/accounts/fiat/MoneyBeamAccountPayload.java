@@ -32,7 +32,6 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -56,10 +55,10 @@ public final class MoneyBeamAccountPayload extends CountryBasedAccountPayload im
     }
 
     public MoneyBeamAccountPayload(String id,
-                                    byte[] salt,
-                                    String countryCode,
-                                    String holderName,
-                                    String emailOrMobileNr) {
+                                   byte[] salt,
+                                   String countryCode,
+                                   String holderName,
+                                   String emailOrMobileNr) {
         super(id, salt, countryCode);
         this.holderName = holderName;
         this.emailOrMobileNr = emailOrMobileNr;
@@ -125,8 +124,10 @@ public final class MoneyBeamAccountPayload extends CountryBasedAccountPayload im
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(emailOrMobileNr.getBytes(StandardCharsets.UTF_8),
-                holderName.getBytes(StandardCharsets.UTF_8));
+        byte[] data = ByteArrayUtils.concat(
+                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                emailOrMobileNr.getBytes(StandardCharsets.UTF_8)
+        );
         return super.getBisq2Fingerprint(data);
     }
 }

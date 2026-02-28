@@ -125,8 +125,10 @@ public final class CashByMailAccountPayload extends AccountPayload<FiatPaymentMe
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(contact.getBytes(StandardCharsets.UTF_8),
-                postalAddress.getBytes(StandardCharsets.UTF_8));
+        byte[] data = ByteArrayUtils.concat(
+                postalAddress.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                contact.getBytes(StandardCharsets.UTF_8)
+        );
         return super.getBisq2Fingerprint(data);
     }
 }

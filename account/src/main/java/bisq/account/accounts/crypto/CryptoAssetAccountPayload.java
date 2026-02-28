@@ -117,7 +117,10 @@ public abstract class CryptoAssetAccountPayload extends AccountPayload<CryptoPay
 
     @Override
     protected byte[] getBisq2Fingerprint(byte[] data) {
-        String codeAndAddress = currencyCode + address;
-        return super.getBisq2Fingerprint(ByteArrayUtils.concat(codeAndAddress.getBytes(StandardCharsets.UTF_8), data));
+        byte[] bytes = ByteArrayUtils.concat(
+                currencyCode.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                address.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                data);
+        return super.getBisq2Fingerprint(bytes);
     }
 }

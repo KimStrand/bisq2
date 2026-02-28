@@ -21,6 +21,7 @@ import bisq.account.accounts.SelectableCurrencyAccountPayload;
 import bisq.account.accounts.util.AccountDataDisplayStringBuilder;
 import bisq.account.accounts.util.BankAccountUtils;
 import bisq.common.proto.UnresolvableProtobufMessageException;
+import bisq.common.util.ByteArrayUtils;
 import bisq.common.validation.NetworkDataValidation;
 import bisq.common.validation.PaymentAccountValidation;
 import bisq.i18n.Res;
@@ -186,25 +187,29 @@ public abstract class BankAccountPayload extends CountryBasedAccountPayload impl
     }
 
     @Override
-    protected byte[] getBisq2Fingerprint(byte[] data) {
-        String bankNameValue = BankAccountUtils.isBankNameRequired(countryCode) ? bankName.orElse("") : "";
-        String bankIdValue = BankAccountUtils.isBankIdRequired(countryCode) ? bankId.orElse("") : "";
-        String branchIdValue = BankAccountUtils.isBranchIdRequired(countryCode) ? branchId.orElse("") : "";
+    public byte[] getBisq2Fingerprint() {
+        String holderNameValue = holderName.orElse("");
+        String holderIdValue = BankAccountUtils.isHolderIdRequired(countryCode) ? holderId.orElse("") : "";
+        String nationalAccountIdValue = BankAccountUtils.isNationalAccountIdRequired(countryCode) ? nationalAccountId.orElse("") : "";
 
         String accountTypeValue = BankAccountUtils.isBankAccountTypeRequired(countryCode)
                 ? bankAccountType.map(BankAccountType::name).orElse("")
                 : "";
 
-        String holderIdValue = BankAccountUtils.isHolderIdRequired(countryCode) ? holderId.orElse("") : "";
+        String bankNameValue = BankAccountUtils.isBankNameRequired(countryCode) ? bankName.orElse("") : "";
+        String bankIdValue = BankAccountUtils.isBankIdRequired(countryCode) ? bankId.orElse("") : "";
+        String branchIdValue = BankAccountUtils.isBranchIdRequired(countryCode) ? branchId.orElse("") : "";
 
-        String nationalAccountIdValue = BankAccountUtils.isNationalAccountIdRequired(countryCode) ? nationalAccountId.orElse("") : "";
-        String all = bankNameValue +
-                bankIdValue +
-                branchIdValue +
-                accountNr +
-                accountTypeValue +
-                holderIdValue +
-                nationalAccountIdValue;
-        return super.getBisq2Fingerprint(all.getBytes(StandardCharsets.UTF_8));
+        byte[] data = ByteArrayUtils.concat(
+                holderNameValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                holderIdValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                nationalAccountIdValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                accountNr.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                accountTypeValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                bankNameValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                bankIdValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                branchIdValue.getBytes(StandardCharsets.UTF_8)
+        );
+        return super.getBisq2Fingerprint(data);
     }
 }

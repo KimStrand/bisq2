@@ -36,6 +36,7 @@ import bisq.common.proto.UnresolvableProtobufMessageException;
 import bisq.common.util.ByteArrayUtils;
 import bisq.common.util.StringUtils;
 import bisq.common.validation.NetworkDataValidation;
+import bisq.security.DigestUtil;
 import com.google.protobuf.ByteString;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -54,6 +55,9 @@ import java.util.List;
 @ToString
 @EqualsAndHashCode
 public abstract class AccountPayload<M extends PaymentMethod<?>> implements NetworkProto {
+    private static final byte[] FINGERPRINT_PREFIX = "BISQ2_FINGERPRINT".getBytes(StandardCharsets.UTF_8);
+    public static final byte[] FINGERPRINT_SEPARATOR = StringUtils.UNIT_SEPARATOR.getBytes(StandardCharsets.UTF_8);
+
     protected final String id;
     protected final byte[] salt; // 32 bytes
 
@@ -107,14 +111,30 @@ public abstract class AccountPayload<M extends PaymentMethod<?>> implements Netw
         return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
     }
 
-    // If not overridden, we use the same as from Bisq 1
-    public byte[] getBisq2Fingerprint() {
-        return getBisq1CompatibleFingerprint();
-    }
+    public abstract byte[] getBisq2Fingerprint();
 
     protected byte[] getBisq2Fingerprint(byte[] data) {
-        String paymentMethodId = getPaymentMethodName();
-        return ByteArrayUtils.concat(paymentMethodId.getBytes(StandardCharsets.UTF_8), data);
+        byte[] paymentMethodId = getPaymentMethodName().getBytes(StandardCharsets.UTF_8);
+        byte[] bytes = ByteArrayUtils.concat(
+                FINGERPRINT_PREFIX, FINGERPRINT_SEPARATOR,
+                paymentMethodId, FINGERPRINT_SEPARATOR,
+                data
+        );
+        return DigestUtil.hash(bytes);
+    }
+
+    protected byte[] joinWithSeparator(List<String> values) {
+        if (values.isEmpty()) {
+            return new byte[]{};
+        }
+        byte[] result = values.get(0).getBytes(StandardCharsets.UTF_8);
+        for (int i = 1; i < values.size(); i++) {
+            result = ByteArrayUtils.concat(
+                    result, FINGERPRINT_SEPARATOR,
+                    values.get(i).getBytes(StandardCharsets.UTF_8)
+            );
+        }
+        return result;
     }
 
     protected String getBisq1CompatiblePaymentMethodId() {

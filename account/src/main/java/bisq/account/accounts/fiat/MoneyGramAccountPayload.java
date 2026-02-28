@@ -63,12 +63,12 @@ public final class MoneyGramAccountPayload extends CountryBasedAccountPayload im
     }
 
     public MoneyGramAccountPayload(String id,
-                                    byte[] salt,
-                                    String countryCode,
-                                    List<String> selectedCurrencyCodes,
-                                    String holderName,
-                                    String email,
-                                    String state
+                                   byte[] salt,
+                                   String countryCode,
+                                   List<String> selectedCurrencyCodes,
+                                   String holderName,
+                                   String email,
+                                   String state
     ) {
         super(id, salt, countryCode);
         this.selectedCurrencyCodes = selectedCurrencyCodes;
@@ -145,8 +145,11 @@ public final class MoneyGramAccountPayload extends CountryBasedAccountPayload im
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        String string = countryCode + state + holderName + email;
-        byte[] data = string.getBytes(StandardCharsets.UTF_8);
+        byte[] data = ByteArrayUtils.concat(
+                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                email.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                state.getBytes(StandardCharsets.UTF_8)
+        );
         return super.getBisq2Fingerprint(data);
     }
 }

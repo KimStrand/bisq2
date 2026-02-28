@@ -65,12 +65,12 @@ public final class SepaAccountPayload extends CountryBasedAccountPayload impleme
     }
 
     public SepaAccountPayload(String id,
-                               byte[] salt,
-                               String holderName,
-                               String iban,
-                               String bic,
-                               String countryCode,
-                               List<String> acceptedCountryCodes) {
+                              byte[] salt,
+                              String holderName,
+                              String iban,
+                              String bic,
+                              String countryCode,
+                              List<String> acceptedCountryCodes) {
         super(id, salt, countryCode);
         this.holderName = holderName;
         this.iban = iban;
@@ -152,13 +152,18 @@ public final class SepaAccountPayload extends CountryBasedAccountPayload impleme
 
     @Override
     public byte[] getBisq1CompatibleFingerprint() {
-        byte[] data = ByteArrayUtils.concat(iban.getBytes(StandardCharsets.UTF_8), bic.getBytes(StandardCharsets.UTF_8));
+        byte[] data = ByteArrayUtils.concat(iban.getBytes(StandardCharsets.UTF_8),
+                bic.getBytes(StandardCharsets.UTF_8));
         return super.getBisq1CompatibleFingerprint(data);
     }
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = ByteArrayUtils.concat(iban.getBytes(StandardCharsets.UTF_8), bic.getBytes(StandardCharsets.UTF_8));
+        byte[] data = ByteArrayUtils.concat(
+                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                iban.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                bic.getBytes(StandardCharsets.UTF_8)
+        );
         return super.getBisq2Fingerprint(data);
     }
 }

@@ -101,8 +101,10 @@ public final class PayIdAccountPayload extends CountryBasedAccountPayload implem
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        String string = payId + holderName;
-        byte[] data = string.getBytes(StandardCharsets.UTF_8);
+        byte[] data = ByteArrayUtils.concat(
+                holderName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                payId.getBytes(StandardCharsets.UTF_8)
+        );
         return super.getBisq2Fingerprint(data);
     }
 

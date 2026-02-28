@@ -37,6 +37,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 @Slf4j
 public class StringUtils {
+    public static final String UNIT_SEPARATOR = "\u001F"; // Unit Separator, ASCII 31
+
     public static final String DOT_ELLIPSIS = "...";
     public static final String UNICODE_ELLIPSIS = "…";
 

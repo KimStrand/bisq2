@@ -291,7 +291,11 @@ public final class SwiftAccountPayload extends CountryBasedAccountPayload implem
 
     @Override
     public byte[] getBisq2Fingerprint() {
-        byte[] data = beneficiaryAccountNr.getBytes(StandardCharsets.UTF_8);
+        byte[] data = ByteArrayUtils.concat(
+                beneficiaryName.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                beneficiaryAccountNr.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                bankSwiftCode.getBytes(StandardCharsets.UTF_8)
+        );
         return super.getBisq2Fingerprint(data);
     }
 }
