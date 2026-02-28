@@ -109,10 +109,15 @@ public abstract class CryptoAssetAccountPayload extends AccountPayload<CryptoPay
                 .orElse(currencyCode);
     }
 
-
     @Override
     protected byte[] getBisq1CompatibleFingerprint(byte[] data) {
         String codeAndAddress = currencyCode + address;
         return super.getBisq1CompatibleFingerprint(ByteArrayUtils.concat(codeAndAddress.getBytes(StandardCharsets.UTF_8), data));
+    }
+
+    @Override
+    protected byte[] getBisq2Fingerprint(byte[] data) {
+        String codeAndAddress = currencyCode + address;
+        return super.getBisq2Fingerprint(ByteArrayUtils.concat(codeAndAddress.getBytes(StandardCharsets.UTF_8), data));
     }
 }

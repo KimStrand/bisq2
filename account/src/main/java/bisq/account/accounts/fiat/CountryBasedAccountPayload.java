@@ -105,4 +105,9 @@ public abstract class CountryBasedAccountPayload extends AccountPayload<FiatPaym
     protected byte[] getBisq1CompatibleFingerprint(byte[] data) {
         return super.getBisq1CompatibleFingerprint(ByteArrayUtils.concat(countryCode.getBytes(StandardCharsets.UTF_8), data));
     }
+
+    @Override
+    protected byte[] getBisq2Fingerprint(byte[] data) {
+        return super.getBisq2Fingerprint(ByteArrayUtils.concat(countryCode.getBytes(StandardCharsets.UTF_8), data));
+    }
 }

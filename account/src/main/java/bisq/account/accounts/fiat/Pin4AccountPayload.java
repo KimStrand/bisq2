@@ -96,10 +96,10 @@ public final class Pin4AccountPayload extends CountryBasedAccountPayload impleme
     }
 
     @Override
-    public byte[] getBisq1CompatibleFingerprint() {
+    public byte[] getBisq2Fingerprint() {
         // As we don't have Pin4 in Bisq 1, we can use the getFingerprint method applying data from
         // CountryBasedAccountPayload.
         byte[] data = mobileNr.getBytes(StandardCharsets.UTF_8);
-        return super.getBisq1CompatibleFingerprint(data);
+        return super.getBisq2Fingerprint(data);
     }
 }

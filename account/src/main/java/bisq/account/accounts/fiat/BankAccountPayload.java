@@ -184,4 +184,27 @@ public abstract class BankAccountPayload extends CountryBasedAccountPayload impl
                 nationalAccountIdValue;
         return super.getBisq1CompatibleFingerprint(all.getBytes(StandardCharsets.UTF_8));
     }
+
+    @Override
+    protected byte[] getBisq2Fingerprint(byte[] data) {
+        String bankNameValue = BankAccountUtils.isBankNameRequired(countryCode) ? bankName.orElse("") : "";
+        String bankIdValue = BankAccountUtils.isBankIdRequired(countryCode) ? bankId.orElse("") : "";
+        String branchIdValue = BankAccountUtils.isBranchIdRequired(countryCode) ? branchId.orElse("") : "";
+
+        String accountTypeValue = BankAccountUtils.isBankAccountTypeRequired(countryCode)
+                ? bankAccountType.map(BankAccountType::name).orElse("")
+                : "";
+
+        String holderIdValue = BankAccountUtils.isHolderIdRequired(countryCode) ? holderId.orElse("") : "";
+
+        String nationalAccountIdValue = BankAccountUtils.isNationalAccountIdRequired(countryCode) ? nationalAccountId.orElse("") : "";
+        String all = bankNameValue +
+                bankIdValue +
+                branchIdValue +
+                accountNr +
+                accountTypeValue +
+                holderIdValue +
+                nationalAccountIdValue;
+        return super.getBisq2Fingerprint(all.getBytes(StandardCharsets.UTF_8));
+    }
 }
