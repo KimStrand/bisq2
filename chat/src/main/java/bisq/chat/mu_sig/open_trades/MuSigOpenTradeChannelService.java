@@ -39,7 +39,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Nullable;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -189,11 +188,19 @@ public class MuSigOpenTradeChannelService extends PrivateGroupChatChannelService
     }
 
     public void addMediatorsResponseMessage(MuSigOpenTradeChannel channel, String text) {
-        setIsInMediation(channel, true);
+        addMediationCaseStateMessage(channel, text, true);
+    }
+
+    public void addMediationCaseStateMessage(MuSigOpenTradeChannel channel, String text, boolean isInMediation) {
+        setIsInMediation(channel, isInMediation);
         checkArgument(channel.getMediator().isPresent());
+        addLocalProtocolLogMessage(channel, channel.getMediator().orElseThrow(), text);
+    }
+
+    private void addLocalProtocolLogMessage(MuSigOpenTradeChannel channel, UserProfile senderUserProfile, String text) {
         UserProfile receiverUserProfile = channel.getMyUserIdentity().getUserProfile();
-        UserProfile senderUserProfile = channel.getMediator().get();
-        MuSigOpenTradeMessage tradeLogMessage = new MuSigOpenTradeMessage(channel.getTradeId(),
+        MuSigOpenTradeMessage tradeLogMessage = new MuSigOpenTradeMessage(
+                channel.getTradeId(),
                 StringUtils.createUid(),
                 channel.getId(),
                 senderUserProfile,

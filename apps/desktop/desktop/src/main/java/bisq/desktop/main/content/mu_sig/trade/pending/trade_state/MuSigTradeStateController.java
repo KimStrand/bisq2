@@ -25,7 +25,6 @@ import bisq.common.observable.Pin;
 import bisq.common.observable.map.HashMapObserver;
 import bisq.common.util.StringUtils;
 import bisq.desktop.ServiceProvider;
-import bisq.desktop.common.observable.FxBindings;
 import bisq.desktop.common.threading.UIThread;
 import bisq.desktop.common.view.Controller;
 import bisq.desktop.common.view.Navigation;
@@ -48,6 +47,7 @@ import bisq.network.p2p.services.confidential.resend.ResendMessageService;
 import bisq.settings.DontShowAgainService;
 import bisq.support.mediation.mu_sig.MuSigMediationRequest;
 import bisq.support.mediation.mu_sig.MuSigMediationRequestService;
+import bisq.trade.DisputeState;
 import bisq.trade.mu_sig.MuSigTrade;
 import bisq.trade.mu_sig.MuSigTradeService;
 import bisq.trade.mu_sig.protocol.MuSigTradeState;
@@ -124,11 +124,11 @@ public class MuSigTradeStateController implements Controller {
 
             model.reset();
 
-
-            isInMediationPin = FxBindings.bind(model.getIsInMediation()).to(channel.isInMediationObservable());
-
             MuSigTrade trade = optionalMuSigTrade.get();
             model.getTrade().set(trade);
+
+            isInMediationPin = trade.disputeStateObservable().addObserver(disputeState ->
+                    UIThread.run(() -> model.getIsInMediation().set(shouldShowMediationBanner(disputeState))));
 
             muSigTradePhaseBox.setMuSigTrade(trade);
 
@@ -238,7 +238,7 @@ public class MuSigTradeStateController implements Controller {
     void onRequestMediation() {
         MuSigPendingTTradesUtils.requestMediation(model.getChannel().get(),
                 model.getTrade().get().getContract(),
-                muSigMediationRequestService, openTradeChannelService);
+                muSigMediationRequestService, openTradeChannelService, tradeService);
     }
 
     public void onResendMediationRequest() {
@@ -379,5 +379,11 @@ public class MuSigTradeStateController implements Controller {
             requestMediationDeliveryStatusPin.unbind();
             requestMediationDeliveryStatusPin = null;
         }
+    }
+
+    private static boolean shouldShowMediationBanner(DisputeState disputeState) {
+        return disputeState == DisputeState.MEDIATION_OPEN ||
+                disputeState == DisputeState.MEDIATION_CLOSED ||
+                disputeState == DisputeState.MEDIATION_RE_OPENED;
     }
 }

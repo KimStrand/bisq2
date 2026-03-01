@@ -52,6 +52,11 @@ import bisq.persistence.DbSubDirectory;
 import bisq.persistence.Persistence;
 import bisq.persistence.RateLimitedPersistenceClient;
 import bisq.settings.SettingsService;
+import bisq.support.mediation.MediationCaseState;
+import bisq.support.mediation.mu_sig.MuSigMediationResult;
+import bisq.support.mediation.mu_sig.MuSigMediationStateMessage;
+import bisq.support.mediation.mu_sig.MuSigMediatorsResponse;
+import bisq.trade.DisputeState;
 import bisq.trade.ServiceProvider;
 import bisq.trade.mu_sig.events.MuSigTradeEvent;
 import bisq.trade.mu_sig.events.blockchain.DepositTxConfirmedEvent;
@@ -283,6 +288,10 @@ public final class MuSigTradeService extends RateLimitedPersistenceClient<MuSigT
             } else {
                 handleMuSigTradeMessage(muSigTradeMessage);
             }
+        } else if (envelopePayloadMessage instanceof MuSigMediatorsResponse muSigMediatorsResponse) {
+            maybeApplyDisputeStateFromMediationOpenSignal(muSigMediatorsResponse.getTradeId());
+        } else if (envelopePayloadMessage instanceof MuSigMediationStateMessage message) {
+            maybeApplyDisputeStateFromMediationStateMessage(message);
         }
     }
 
@@ -353,6 +362,10 @@ public final class MuSigTradeService extends RateLimitedPersistenceClient<MuSigT
     public void closeTrade(MuSigTrade trade) {
         //todo: just temp, we will move it to closed trades in future
         removeTrade(trade);
+    }
+
+    public void maybeApplyDisputeStateFromMediationRequest(String tradeId) {
+        maybeApplyDisputeStateFromMediationOpenSignal(tradeId);
     }
 
     public void removeTrade(MuSigTrade trade) {
@@ -639,5 +652,64 @@ public final class MuSigTradeService extends RateLimitedPersistenceClient<MuSigT
                 contactListService.addContactListEntry(peersProfile.get(), myProfile.get(), ContactReason.MUSIG_TRADE);
             }
         }
+    }
+
+    private void maybeApplyDisputeStateFromMediationOpenSignal(String tradeId) {
+        findTrade(tradeId).ifPresent(trade -> {
+            DisputeState current = trade.getDisputeState();
+            if (current == DisputeState.ARBITRATION_OPEN || current == DisputeState.ARBITRATION_CLOSED) {
+                return;
+            }
+
+            DisputeState next = current;
+            if (current == DisputeState.NO_DISPUTE) {
+                next = DisputeState.MEDIATION_OPEN;
+            } else if (current == DisputeState.MEDIATION_CLOSED) {
+                next = DisputeState.MEDIATION_RE_OPENED;
+            }
+
+            if (next != current) {
+                trade.setDisputeState(next);
+                persist();
+            }
+        });
+    }
+
+    private void maybeApplyDisputeStateFromMediationStateMessage(MuSigMediationStateMessage message) {
+        findTrade(message.getTradeId()).ifPresent(trade -> {
+            DisputeState current = trade.getDisputeState();
+            if (current == DisputeState.ARBITRATION_OPEN || current == DisputeState.ARBITRATION_CLOSED) {
+                return;
+            }
+
+            MediationCaseState mediationCaseState = message.getMediationCaseState();
+            boolean resultChanged = false;
+            DisputeState next = current;
+
+            if (mediationCaseState == MediationCaseState.RE_OPENED) {
+                next = DisputeState.MEDIATION_RE_OPENED;
+            } else if (mediationCaseState == MediationCaseState.CLOSED) {
+                next = DisputeState.MEDIATION_CLOSED;
+                Optional<MuSigMediationResult> incomingResult = message.getMuSigMediationResult();
+                if (incomingResult.isEmpty()) {
+                    log.warn("Ignoring CLOSED MuSigMediationStateMessage without MuSigMediationResult for trade {}.",
+                            message.getTradeId());
+                    return;
+                }
+
+                Optional<MuSigMediationResult> currentResult = trade.getMuSigMediationResult();
+                if (currentResult.isEmpty()) {
+                    resultChanged = trade.setMuSigMediationResult(incomingResult.orElseThrow());
+                } else if (!currentResult.orElseThrow().equals(incomingResult.orElseThrow())) {
+                    log.warn("Ignoring changed MuSigMediationResult for trade {} because result cannot be changed once set.",
+                            message.getTradeId());
+                }
+            }
+
+            if (next != current || resultChanged) {
+                trade.setDisputeState(next);
+                persist();
+            }
+        });
     }
 }
