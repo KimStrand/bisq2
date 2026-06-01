@@ -18,19 +18,21 @@
 package bisq.desktop.webcam;
 
 import bisq.common.file.FileMutatorUtils;
-import bisq.common.file.FileReaderUtils;
 import bisq.common.locale.LanguageRepository;
 import bisq.common.platform.OS;
 import bisq.common.threading.ExecutorFactory;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.BufferedWriter;
+import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -41,36 +43,30 @@ import static bisq.common.threading.ExecutorFactory.commonForkJoinPool;
 @Slf4j
 public class WebcamProcessLauncher {
     private final Path webcamDirPath;
-    private final WebcamJarProvider webcamJarProvider;
+    private final WebcamAppResourceProvider webcamAppResourceProvider;
+    private final WebcamSandboxPolicy sandboxPolicy;
     private Optional<Process> runningProcess = Optional.empty();
 
     public WebcamProcessLauncher(Path appDataDirPath) {
         this.webcamDirPath = appDataDirPath.resolve("webcam");
-        this.webcamJarProvider = new WebcamJarProvider(webcamDirPath);
+        this.webcamAppResourceProvider = new WebcamAppResourceProvider(webcamDirPath);
+        this.sandboxPolicy = WebcamSandboxPolicy.create();
     }
 
     public CompletableFuture<Process> start(String sessionSecret) {
         ExecutorService launchExecutor = ExecutorFactory.newSingleThreadExecutor("WebcamProcessLauncher");
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Path jarFilePath = webcamJarProvider.prepareWebcamJar();
+                Path jarFilePath = webcamAppResourceProvider.prepareWebcamAppResources();
 
-                String logFileParam = "--logFile=" + URLEncoder.encode(webcamDirPath.toAbsolutePath().toString(), StandardCharsets.UTF_8) + FileReaderUtils.FILE_SEP + "webcam-app";
+                Path logFilePath = webcamDirPath.resolve("webcam-app");
+                String logFileParam = "--logFile=" + URLEncoder.encode(logFilePath.toAbsolutePath().toString(), StandardCharsets.UTF_8);
                 String languageTagParam = "--languageTag=" + LanguageRepository.getDefaultLanguageTag();
 
                 String pathToJavaExe = System.getProperty("java.home") + "/bin/java";
-                ProcessBuilder processBuilder;
-                if (OS.isMacOs()) {
-                    String iconPath = webcamDirPath + "/webcam-app-icon.png";
-                    Path bisqIconPath = Paths.get(iconPath);
-                    if (!Files.exists(bisqIconPath)) {
-                        FileMutatorUtils.resourceToFile("images/webcam/webcam-app-icon@2x.png", bisqIconPath);
-                    }
-                    String jvmArgs = "-Xdock:icon=" + iconPath;
-                    processBuilder = new ProcessBuilder(pathToJavaExe, jvmArgs, "-jar", jarFilePath.toAbsolutePath().toString(), logFileParam, languageTagParam);
-                } else {
-                    processBuilder = new ProcessBuilder(pathToJavaExe, "-jar", jarFilePath.toAbsolutePath().toString(), logFileParam, languageTagParam);
-                }
+                List<String> command = createWebcamAppCommand(pathToJavaExe, jarFilePath, logFileParam, languageTagParam);
+                WebcamSandboxContext sandboxContext = new WebcamSandboxContext(webcamDirPath, logFilePath);
+                ProcessBuilder processBuilder = sandboxPolicy.createProcessBuilder(command, sandboxContext);
                 processBuilder.redirectError(ProcessBuilder.Redirect.DISCARD);
                 log.info("Launching webcam app process");
                 Process process = processBuilder.start();
@@ -83,6 +79,38 @@ public class WebcamProcessLauncher {
                 throw new RuntimeException(e);
             }
         }, launchExecutor).whenComplete((process, throwable) -> launchExecutor.shutdown());
+    }
+
+    private List<String> createWebcamAppCommand(String pathToJavaExe,
+                                                Path jarFilePath,
+                                                String logFileParam,
+                                                String languageTagParam) throws IOException {
+        List<String> command = new ArrayList<>();
+        command.add(pathToJavaExe);
+        if (OS.isMacOs()) {
+            String iconPath = webcamDirPath + "/webcam-app-icon.png";
+            Path bisqIconPath = Paths.get(iconPath);
+            if (!Files.exists(bisqIconPath)) {
+                FileMutatorUtils.resourceToFile("images/webcam/webcam-app-icon@2x.png", bisqIconPath);
+            }
+            command.add("-Xdock:icon=" + iconPath);
+        }
+        if (OS.isLinux()) {
+            Path webcamHomePath = webcamDirPath.resolve("home");
+            Path webcamTempPath = webcamDirPath.resolve("tmp");
+            Path javaCppCachePath = webcamDirPath.resolve("javacpp-cache");
+            Files.createDirectories(webcamHomePath);
+            Files.createDirectories(webcamTempPath);
+            Files.createDirectories(javaCppCachePath);
+            command.add("-Duser.home=" + webcamHomePath.toAbsolutePath());
+            command.add("-Djava.io.tmpdir=" + webcamTempPath.toAbsolutePath());
+            command.add("-Dorg.bytedeco.javacpp.cachedir=" + javaCppCachePath.toAbsolutePath());
+        }
+        command.add("-jar");
+        command.add(jarFilePath.toAbsolutePath().toString());
+        command.add(logFileParam);
+        command.add(languageTagParam);
+        return command;
     }
 
     private void sendSessionSecret(Process process, String sessionSecret) {

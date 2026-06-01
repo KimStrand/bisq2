@@ -15,6 +15,42 @@ application {
     mainClass.set("bisq.webcam.WebcamAppLauncher")
 }
 
+val linuxSandboxLauncherFileName = "bisq-webcam-sandbox-launcher"
+val linuxBuildHost = System.getProperty("os.name").lowercase().contains("linux")
+val linuxSandboxLauncherSource = layout.projectDirectory.file("src/main/c/$linuxSandboxLauncherFileName.c")
+val linuxSandboxLauncherOutput = layout.buildDirectory.file("native/linux/$linuxSandboxLauncherFileName")
+
+val compileLinuxSandboxLauncher by tasks.registering(org.gradle.api.tasks.Exec::class) {
+    onlyIf { linuxBuildHost }
+    inputs.file(linuxSandboxLauncherSource)
+    outputs.file(linuxSandboxLauncherOutput)
+
+    doFirst {
+        linuxSandboxLauncherOutput.get().asFile.parentFile.mkdirs()
+    }
+
+    commandLine(
+            "cc",
+            "-std=c11",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-D_FORTIFY_SOURCE=2",
+            "-fstack-protector-strong",
+            "-fPIE",
+            "-pie",
+            "-Wl,-z,relro,-z,now",
+            "-o",
+            linuxSandboxLauncherOutput.get().asFile.absolutePath,
+            linuxSandboxLauncherSource.asFile.absolutePath
+    )
+
+    doLast {
+        linuxSandboxLauncherOutput.get().asFile.setExecutable(true, true)
+    }
+}
+
 javafx {
     version = "21.0.11"
     modules = listOf("javafx.controls")
@@ -121,6 +157,14 @@ tasks {
         val version = VersionUtil.getVersionFromFile(project)
         archiveClassifier.set("$version-all")
         mergeServiceFiles()
+    }
+
+    named<org.gradle.api.tasks.bundling.Zip>("zipWebcamAppShadowJar") {
+        if (linuxBuildHost) {
+            dependsOn(compileLinuxSandboxLauncher)
+            include(linuxSandboxLauncherFileName)
+            from(linuxSandboxLauncherOutput)
+        }
     }
 
     distZip {
