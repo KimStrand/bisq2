@@ -44,12 +44,19 @@ active Java runtime, selected system runtime directories, and the X11 authority 
 writes are limited to the webcam working directory, `/dev`, `/run`, `/tmp`, and `/var/tmp`. Direct launcher use without
 explicit roots keeps the broader read compatibility fallback.
 
+On macOS builds, Gradle generates a separate `BisqWebcam.app` helper image and signs it with App Sandbox and camera
+entitlements. The desktop packaging embeds that helper app into the main app payload, and the macOS policy launches the
+helper executable instead of `java -jar`. Network entitlements are intentionally omitted. The helper writes logs to
+stderr, and the desktop process redirects stderr into the normal `webcam/webcam-app.log` file so the helper does not need
+write access to the Bisq data directory.
+
 ## How to build to make it accessible in desktop?
 
 To include the resources in the desktop application it requires to run the gradle task `processWebcamForDesktop` in the
 webcam project (subproject of desktop).
 This task creates a shadow jar, makes a zip and copies the zip to the build directory in the `desktop:desktop` project.
 The target directory is `apps/desktop/desktop/build/generated/src/main/resources/webcam-app`.
-It also copies teh `version.txt` file from the `desktop:webcam` projects root directory to the same resource directory.
+It also copies the `version.txt` file from the `desktop:webcam` projects root directory to the same resource directory.
 
-`
+On macOS installer builds, `generateInstallers` also runs `generateMacOsWebcamHelperApp` and embeds the resulting
+`BisqWebcam.app` helper into the main application payload.

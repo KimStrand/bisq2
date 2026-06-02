@@ -8,6 +8,7 @@ import bisq.gradle.packaging.jpackage.package_formats.LinuxPackages
 import bisq.gradle.packaging.jpackage.package_formats.MacPackage
 import bisq.gradle.packaging.jpackage.package_formats.WindowsPackage
 import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
@@ -47,6 +48,10 @@ abstract class JPackageTask : DefaultTask() {
     @get:InputDirectory
     abstract val runtimeImageDirectory: DirectoryProperty
 
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val appContentFiles: ConfigurableFileCollection
+
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
 
@@ -58,6 +63,7 @@ abstract class JPackageTask : DefaultTask() {
                 inputDirPath = distDirFile.get().toPath().resolve("lib"),
                 outputDirPath = outputDirectory.asFile.get().toPath(),
                 runtimeImageDirPath = runtimeImageDirectory.asFile.get().toPath(),
+                appContentPaths = appContentFiles.files.map { it.toPath() },
 
                 appConfig = JPackageAppConfig(
                     name = appName.get(),

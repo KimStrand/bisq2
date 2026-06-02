@@ -28,6 +28,8 @@ interface WebcamSandboxPolicy {
         switch (os) {
             case LINUX:
                 return new LinuxWebcamSandboxPolicy();
+            case MAC_OS:
+                return new MacOsWebcamSandboxPolicy();
             case WINDOWS:
                 return new WindowsWebcamSandboxPolicy();
             default:

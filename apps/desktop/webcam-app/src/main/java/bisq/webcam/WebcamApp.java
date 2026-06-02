@@ -84,12 +84,16 @@ public class WebcamApp extends Application {
     public void init() {
         Parameters parameters = getParameters();
         try {
-            String logFile = PlatformUtils.getUserDataDirPath().resolve("Bisq-webcam-app").toAbsolutePath() + FileReaderUtils.FILE_SEP + "webcam-app";
-            String logFileParam = parameters.getNamed().get("logFile");
-            if (logFileParam != null) {
-                logFile = URLDecoder.decode(logFileParam, StandardCharsets.UTF_8);
+            if ("true".equalsIgnoreCase(parameters.getNamed().get("logToStderr"))) {
+                LogSetup.setupSystemErrAppenderOnly();
+            } else {
+                String logFile = PlatformUtils.getUserDataDirPath().resolve("Bisq-webcam-app").toAbsolutePath() + FileReaderUtils.FILE_SEP + "webcam-app";
+                String logFileParam = parameters.getNamed().get("logFile");
+                if (logFileParam != null) {
+                    logFile = URLDecoder.decode(logFileParam, StandardCharsets.UTF_8);
+                }
+                LogSetup.setupWithoutConsoleAppender(logFile);
             }
-            LogSetup.setupWithoutConsoleAppender(logFile);
             log.info("Webcam app logging initialized");
 
             String languageTag = "en";

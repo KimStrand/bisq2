@@ -123,6 +123,43 @@ public class WebcamSandboxPolicyTest {
     }
 
     @Test
+    void macOsCommandWrapperUsesPackagedHelperApp() throws Exception {
+        Path helperExecutablePath = tempDir.resolve("BisqWebcam.app")
+                .resolve("Contents")
+                .resolve("MacOS")
+                .resolve("BisqWebcam");
+        Files.createDirectories(helperExecutablePath.getParent());
+        Files.writeString(helperExecutablePath, "helper");
+        assertTrue(helperExecutablePath.toFile().setExecutable(true, true));
+        List<String> command = List.of(
+                "java",
+                "-Xdock:icon=webcam-app-icon.png",
+                "-jar",
+                "webcam-app.jar",
+                "--logToStderr=true",
+                "--languageTag=en");
+
+        List<String> wrappedCommand = new MacOsWebcamSandboxPolicy(helperExecutablePath)
+                .wrapCommand(command, context(tempDir.resolve("webcam")));
+
+        assertEquals(List.of(
+                helperExecutablePath.toAbsolutePath().toString(),
+                "--logToStderr=true",
+                "--languageTag=en"), wrappedCommand);
+    }
+
+    @Test
+    void macOsCommandWrapperFailsWhenHelperAppIsMissing() {
+        List<String> command = List.of("java", "-jar", "webcam-app.jar", "--logToStderr=true");
+
+        IOException exception = assertThrows(IOException.class,
+                () -> new MacOsWebcamSandboxPolicy(tempDir.resolve("missing-helper"))
+                        .wrapCommand(command, context(tempDir.resolve("webcam"))));
+
+        assertTrue(exception.getMessage().contains("macOS webcam helper app is missing or not executable"));
+    }
+
+    @Test
     void matchesAllowedEnvironmentVariablesCaseInsensitively() throws Exception {
         ProcessBuilder processBuilder = new ProcessBuilder("java", "-version");
         Map<String, String> environment = processBuilder.environment();

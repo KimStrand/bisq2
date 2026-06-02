@@ -7,6 +7,7 @@ data class JPackageConfig(
         val inputDirPath: Path,
         val outputDirPath: Path,
         val runtimeImageDirPath: Path,
+        val appContentPaths: List<Path>,
         val appConfig: JPackageAppConfig,
         val packageFormatConfigs: JPackagePackageFormatConfigs
 )

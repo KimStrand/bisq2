@@ -36,6 +36,11 @@ class PackageFactory(private val jPackagePath: Path, private val jPackageConfig:
                 allCommands.add(value)
             }
 
+            jPackageConfig.appContentPaths.forEach { path ->
+                allCommands.add("--app-content")
+                allCommands.add(path.toAbsolutePath().toString())
+            }
+
             val jPackageTempPath = jPackageConfig.outputDirPath.parent.resolve("temp_${filetypeAndCustomCommands.first}")
             deleteFileOrDirectory(jPackageTempPath.toFile())
             allCommands.add("--temp")

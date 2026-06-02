@@ -1,6 +1,9 @@
 import bisq.gradle.common.VersionUtil
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import org.gradle.api.GradleException
 import org.gradle.jvm.tasks.Jar
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import java.io.File
 
 plugins {
     id("bisq.java-library")
@@ -19,6 +22,16 @@ val linuxSandboxLauncherFileName = "bisq-webcam-sandbox-launcher"
 val linuxBuildHost = System.getProperty("os.name").lowercase().contains("linux")
 val linuxSandboxLauncherSource = layout.projectDirectory.file("src/main/c/$linuxSandboxLauncherFileName.c")
 val linuxSandboxLauncherOutput = layout.buildDirectory.file("native/linux/$linuxSandboxLauncherFileName")
+
+val macOsBuildHost = System.getProperty("os.name").lowercase().contains("mac") ||
+        System.getProperty("os.name").lowercase().contains("darwin")
+val macOsWebcamHelperAppName = "BisqWebcam"
+val macOsWebcamHelperOutputDir = layout.buildDirectory.dir("generated/macos-helper")
+val macOsWebcamHelperAppDir = macOsWebcamHelperOutputDir.map { it.dir("$macOsWebcamHelperAppName.app") }
+val macOsWebcamHelperEntitlements = layout.projectDirectory.file("package/macosx/BisqWebcam.entitlements")
+val jpackageExecutable = javaToolchains.launcherFor {
+    languageVersion.set(JavaLanguageVersion.of(21))
+}.map { it.metadata.installationPath.file("bin/jpackage").asFile }
 
 val compileLinuxSandboxLauncher by tasks.registering(org.gradle.api.tasks.Exec::class) {
     onlyIf { linuxBuildHost }
@@ -48,6 +61,51 @@ val compileLinuxSandboxLauncher by tasks.registering(org.gradle.api.tasks.Exec::
 
     doLast {
         linuxSandboxLauncherOutput.get().asFile.setExecutable(true, true)
+    }
+}
+
+val generateMacOsWebcamHelperApp by tasks.registering(org.gradle.api.tasks.Exec::class) {
+    onlyIf { macOsBuildHost }
+
+    val shadowJarTask = tasks.named<ShadowJar>("shadowJar")
+    if (macOsBuildHost) {
+        dependsOn(shadowJarTask)
+        inputs.file(shadowJarTask.flatMap { it.archiveFile })
+    }
+    inputs.file(macOsWebcamHelperEntitlements)
+    outputs.dir(macOsWebcamHelperAppDir)
+
+    doFirst {
+        delete(macOsWebcamHelperOutputDir)
+        macOsWebcamHelperOutputDir.get().asFile.mkdirs()
+        commandLine(
+                jpackageExecutable.get().absolutePath,
+                "--type", "app-image",
+                "--dest", macOsWebcamHelperOutputDir.get().asFile.absolutePath,
+                "--name", macOsWebcamHelperAppName,
+                "--input", layout.buildDirectory.dir("libs").get().asFile.absolutePath,
+                "--main-jar", shadowJarTask.get().archiveFileName.get(),
+                "--main-class", "bisq.webcam.WebcamAppLauncher",
+                "--app-version", VersionUtil.getVersionFromFile(project),
+                "--mac-package-identifier", "bisq.webcam"
+        )
+    }
+
+    doLast {
+        val codesignFile = File("/usr/bin/codesign")
+        if (!codesignFile.canExecute()) {
+            throw GradleException("Cannot sign macOS webcam helper app: /usr/bin/codesign is not executable.")
+        }
+        exec {
+            commandLine(
+                    codesignFile.absolutePath,
+                    "--force",
+                    "--deep",
+                    "--sign", "-",
+                    "--entitlements", macOsWebcamHelperEntitlements.asFile.absolutePath,
+                    macOsWebcamHelperAppDir.get().asFile.absolutePath
+            )
+        }
     }
 }
 

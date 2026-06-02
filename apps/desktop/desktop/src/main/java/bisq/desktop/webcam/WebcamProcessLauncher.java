@@ -60,14 +60,21 @@ public class WebcamProcessLauncher {
                 Path jarFilePath = webcamAppResourceProvider.prepareWebcamAppResources();
 
                 Path logFilePath = webcamDirPath.resolve("webcam-app");
-                String logFileParam = "--logFile=" + URLEncoder.encode(logFilePath.toAbsolutePath().toString(), StandardCharsets.UTF_8);
+                String logFileParam = OS.isMacOs()
+                        ? "--logToStderr=true"
+                        : "--logFile=" + URLEncoder.encode(logFilePath.toAbsolutePath().toString(), StandardCharsets.UTF_8);
                 String languageTagParam = "--languageTag=" + LanguageRepository.getDefaultLanguageTag();
 
                 String pathToJavaExe = System.getProperty("java.home") + "/bin/java";
                 List<String> command = createWebcamAppCommand(pathToJavaExe, jarFilePath, logFileParam, languageTagParam);
                 WebcamSandboxContext sandboxContext = new WebcamSandboxContext(webcamDirPath, logFilePath);
                 ProcessBuilder processBuilder = sandboxPolicy.createProcessBuilder(command, sandboxContext);
-                processBuilder.redirectError(ProcessBuilder.Redirect.DISCARD);
+                if (OS.isMacOs()) {
+                    Files.createDirectories(logFilePath.getParent());
+                    processBuilder.redirectError(ProcessBuilder.Redirect.appendTo(Path.of(logFilePath.toAbsolutePath().toString() + ".log").toFile()));
+                } else {
+                    processBuilder.redirectError(ProcessBuilder.Redirect.DISCARD);
+                }
                 log.info("Launching webcam app process");
                 Process process = processBuilder.start();
                 sendSessionSecret(process, sessionSecret);

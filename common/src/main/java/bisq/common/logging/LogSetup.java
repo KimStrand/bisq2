@@ -22,6 +22,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.ConsoleAppender;
 import ch.qos.logback.core.rolling.FixedWindowRollingPolicy;
 import ch.qos.logback.core.rolling.RollingFileAppender;
 import ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy;
@@ -31,6 +32,8 @@ import org.slf4j.LoggerFactory;
 
 public class LogSetup {
     private static final String CONSOLE_APPENDER_NAME = "CONSOLE_APPENDER";
+    private static final String STDERR_APPENDER_NAME = "STDERR_APPENDER";
+    private static final String LOG_PATTERN = "%d{MMM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{15}: %mask(%msg) %xEx%n";
     private static Logger logbackLogger;
     public static final Level DEFAULT_LOG_LEVEL = Level.INFO;
 
@@ -45,6 +48,34 @@ public class LogSetup {
     public static void setupWithoutConsoleAppender(String fileName) {
         setup(fileName);
         detachConsoleAppender();
+    }
+
+    public static void setupSystemErrAppenderOnly() {
+        if (logbackLogger != null && LoggerFactory.getILoggerFactory() instanceof LoggerContext) {
+            return;
+        }
+
+        LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+        Logger rootLogger = loggerContext.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        rootLogger.detachAndStopAllAppenders();
+
+        ConsoleAppender<ILoggingEvent> appender = new ConsoleAppender<>();
+        appender.setContext(loggerContext);
+        appender.setName(STDERR_APPENDER_NAME);
+        appender.setTarget("System.err");
+
+        PatternLayoutEncoder encoder = new PatternLayoutEncoder();
+        encoder.setContext(loggerContext);
+        encoder.setPattern(LOG_PATTERN);
+        encoder.setCharset(Charsets.UTF_8);
+        encoder.start();
+
+        appender.setEncoder(encoder);
+        appender.start();
+
+        logbackLogger = rootLogger;
+        logbackLogger.addAppender(appender);
+        logbackLogger.setLevel(DEFAULT_LOG_LEVEL);
     }
 
     private static void detachConsoleAppender() {
@@ -80,7 +111,7 @@ public class LogSetup {
 
         PatternLayoutEncoder encoder = new PatternLayoutEncoder();
         encoder.setContext(loggerContext);
-        encoder.setPattern("%d{MMM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{15}: %mask(%msg) %xEx%n");
+        encoder.setPattern(LOG_PATTERN);
         encoder.setCharset(Charsets.UTF_8);
         encoder.start();
 
