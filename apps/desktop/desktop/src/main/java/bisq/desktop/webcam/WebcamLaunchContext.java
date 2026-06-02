@@ -19,5 +19,5 @@ package bisq.desktop.webcam;
 
 import java.nio.file.Path;
 
-record WebcamSandboxContext(Path webcamDirPath, Path logFilePath) {
+record WebcamLaunchContext(Path webcamDirPath, Path logFilePath) {
 }

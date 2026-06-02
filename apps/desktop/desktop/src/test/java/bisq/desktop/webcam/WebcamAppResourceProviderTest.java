@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -41,7 +42,7 @@ public class WebcamAppResourceProviderTest {
     private static final String VERSION = "1.0.0";
     private static final String JAR_FILE_NAME = "webcam-app-" + VERSION + "-all.jar";
     private static final String RESOURCE_PATH = "webcam-app/webcam-app-" + VERSION + ".zip";
-    private static final String SANDBOX_LAUNCHER_FILE_NAME = LinuxWebcamSandboxPolicy.SANDBOX_LAUNCHER_FILE_NAME;
+    private static final String SANDBOX_LAUNCHER_FILE_NAME = "test-webcam-sandbox-launcher";
 
     @TempDir
     Path tempDir;
@@ -136,11 +137,20 @@ public class WebcamAppResourceProviderTest {
     }
 
     private WebcamAppResourceProvider newProviderForZipBytes(byte[] zipBytes) {
-        return new WebcamAppResourceProvider(tempDir) {
+        return new WebcamAppResourceProvider(tempDir, sandboxPolicy()) {
             @Override
             InputStream openWebcamZipResource(String resourcePath) {
                 assertEquals(RESOURCE_PATH, resourcePath);
                 return new ByteArrayInputStream(zipBytes);
+            }
+        };
+    }
+
+    private WebcamSandboxPolicy sandboxPolicy() {
+        return new BaselineWebcamSandboxPolicy() {
+            @Override
+            public Optional<WebcamSandboxPolicy.SandboxLauncherResource> sandboxLauncherResource() {
+                return Optional.of(new WebcamSandboxPolicy.SandboxLauncherResource(SANDBOX_LAUNCHER_FILE_NAME, OS.isLinux()));
             }
         };
     }

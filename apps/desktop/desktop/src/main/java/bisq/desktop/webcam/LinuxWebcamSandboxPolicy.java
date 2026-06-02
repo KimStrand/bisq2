@@ -20,13 +20,12 @@ package bisq.desktop.webcam;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 
-final class LinuxWebcamSandboxPolicy extends BaselineWebcamSandboxPolicy {
+final class LinuxWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy {
     static final String SANDBOX_LAUNCHER_FILE_NAME = "bisq-webcam-sandbox-launcher";
     private static final Set<String> ALLOWED_ENVIRONMENT_VARIABLE_NAMES = allowedEnvironmentVariableNames(
             "DBUS_SESSION_BUS_ADDRESS",
@@ -43,18 +42,19 @@ final class LinuxWebcamSandboxPolicy extends BaselineWebcamSandboxPolicy {
             "XDG_SESSION_TYPE",
             "XMODIFIERS");
 
-    private final Predicate<Path> sandboxLauncherExecutablePredicate;
-
     LinuxWebcamSandboxPolicy() {
         this(path -> Files.isRegularFile(path) && Files.isExecutable(path));
     }
 
     LinuxWebcamSandboxPolicy(Predicate<Path> sandboxLauncherExecutablePredicate) {
-        this.sandboxLauncherExecutablePredicate = sandboxLauncherExecutablePredicate;
+        super(SANDBOX_LAUNCHER_FILE_NAME,
+                true,
+                sandboxLauncherExecutablePredicate,
+                "Linux webcam sandbox launcher is missing or not executable");
     }
 
     @Override
-    public void apply(ProcessBuilder processBuilder, WebcamSandboxContext context) throws IOException {
+    public void apply(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException {
         super.apply(processBuilder, context);
         Path sandboxHomePath = context.webcamDirPath().resolve("home");
         Files.createDirectories(sandboxHomePath);
@@ -67,21 +67,12 @@ final class LinuxWebcamSandboxPolicy extends BaselineWebcamSandboxPolicy {
     }
 
     @Override
-    public List<String> wrapCommand(List<String> command, WebcamSandboxContext context) throws IOException {
-        Path sandboxLauncherPath = context.webcamDirPath().resolve(SANDBOX_LAUNCHER_FILE_NAME);
-        if (sandboxLauncherExecutablePredicate.test(sandboxLauncherPath)) {
-            List<String> wrappedCommand = new ArrayList<>(command.size() + 64);
-            wrappedCommand.add(sandboxLauncherPath.toAbsolutePath().toString());
-            addLandlockReadRootArguments(wrappedCommand, context);
-            addLandlockWriteRootArguments(wrappedCommand, context);
-            wrappedCommand.add("--");
-            wrappedCommand.addAll(command);
-            return List.copyOf(wrappedCommand);
-        }
-        throw new IOException("Linux webcam sandbox launcher is missing or not executable: " + sandboxLauncherPath.toAbsolutePath());
+    protected void addLauncherArguments(List<String> wrappedCommand, WebcamLaunchContext context) {
+        addLandlockReadRootArguments(wrappedCommand, context);
+        addLandlockWriteRootArguments(wrappedCommand, context);
     }
 
-    private void addLandlockReadRootArguments(List<String> wrappedCommand, WebcamSandboxContext context) {
+    private void addLandlockReadRootArguments(List<String> wrappedCommand, WebcamLaunchContext context) {
         LinkedHashSet<Path> readRoots = new LinkedHashSet<>();
         readRoots.add(context.webcamDirPath());
         readRoots.add(Path.of(System.getProperty("java.home")));
@@ -109,7 +100,7 @@ final class LinuxWebcamSandboxPolicy extends BaselineWebcamSandboxPolicy {
         readRoots.forEach(path -> addRootArgument(wrappedCommand, "--read-root", path));
     }
 
-    private void addLandlockWriteRootArguments(List<String> wrappedCommand, WebcamSandboxContext context) {
+    private void addLandlockWriteRootArguments(List<String> wrappedCommand, WebcamLaunchContext context) {
         LinkedHashSet<Path> writeRoots = new LinkedHashSet<>();
         writeRoots.add(context.webcamDirPath());
         addExistingPath(writeRoots, "/dev");

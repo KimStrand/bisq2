@@ -58,34 +58,69 @@ public class WebcamSandboxPolicyTest {
     }
 
     @Test
-    void linuxCommandWrapperFailsWhenSandboxLauncherIsMissing() {
-        List<String> command = List.of("java", "-jar", "webcam-app.jar");
-
+    void linuxProcessCommandFailsWhenSandboxLauncherIsMissing() {
         IOException exception = assertThrows(IOException.class,
                 () -> new LinuxWebcamSandboxPolicy(path -> false)
-                        .wrapCommand(command, context(tempDir.resolve("webcam"))));
+                        .createProcessCommand("java",
+                                Path.of("webcam-app.jar"),
+                                List.of(),
+                                context(tempDir.resolve("webcam"))));
 
         assertTrue(exception.getMessage().contains("Linux webcam sandbox launcher is missing or not executable"));
     }
 
     @Test
-    void linuxCommandWrapperPrependsSandboxLauncherAndLandlockRootsWhenExecutableLauncherExists() throws Exception {
+    void linuxProcessCommandPrependsSandboxLauncherAndLandlockRootsWhenExecutableLauncherExists() throws Exception {
         Path webcamDirPath = tempDir.resolve("webcam");
         Path sandboxLauncherPath = webcamDirPath.resolve(LinuxWebcamSandboxPolicy.SANDBOX_LAUNCHER_FILE_NAME);
-        List<String> command = List.of("java", "-jar", "webcam-app.jar");
+        Path jarFilePath = Path.of("webcam-app.jar");
+        List<String> webcamAppArguments = List.of("--logFile=log", "--languageTag=en");
         LinuxWebcamSandboxPolicy policy = new LinuxWebcamSandboxPolicy(path -> path.equals(sandboxLauncherPath));
 
-        List<String> wrappedCommand = policy.wrapCommand(command, context(webcamDirPath));
+        List<String> command = policy.createProcessCommand("java", jarFilePath, webcamAppArguments, context(webcamDirPath));
 
-        int commandSeparatorIndex = wrappedCommand.indexOf("--");
-        assertEquals(sandboxLauncherPath.toAbsolutePath().toString(), wrappedCommand.get(0));
-        assertTrue(wrappedCommand.contains("--read-root"));
-        assertTrue(wrappedCommand.contains(webcamDirPath.toAbsolutePath().normalize().toString()));
-        assertTrue(wrappedCommand.contains("--write-root"));
+        int commandSeparatorIndex = command.indexOf("--");
+        assertEquals(sandboxLauncherPath.toAbsolutePath().toString(), command.get(0));
+        assertTrue(command.contains("--read-root"));
+        assertTrue(command.contains(webcamDirPath.toAbsolutePath().normalize().toString()));
+        assertTrue(command.contains("--write-root"));
         assertTrue(commandSeparatorIndex > 0);
-        assertEquals(command, wrappedCommand.subList(commandSeparatorIndex + 1, wrappedCommand.size()));
+        assertEquals(List.of(
+                "java",
+                "-Duser.home=" + webcamDirPath.resolve("home").toAbsolutePath(),
+                "-Djava.io.tmpdir=" + webcamDirPath.resolve("tmp").toAbsolutePath(),
+                "-Dorg.bytedeco.javacpp.cachedir=" + webcamDirPath.resolve("javacpp-cache").toAbsolutePath(),
+                "-jar",
+                jarFilePath.toAbsolutePath().toString(),
+                "--logFile=log",
+                "--languageTag=en"), command.subList(commandSeparatorIndex + 1, command.size()));
     }
 
+    @Test
+    void linuxPolicyExposesExecutableSandboxLauncherResource() {
+        WebcamSandboxPolicy.SandboxLauncherResource resource = new LinuxWebcamSandboxPolicy(path -> true)
+                .sandboxLauncherResource()
+                .orElseThrow();
+
+        assertEquals(LinuxWebcamSandboxPolicy.SANDBOX_LAUNCHER_FILE_NAME, resource.fileName());
+        assertTrue(resource.requiresExecutableBit());
+    }
+
+    @Test
+    void windowsPolicyExposesNonExecutableAppContainerLauncherResource() {
+        WebcamSandboxPolicy.SandboxLauncherResource resource = new WindowsWebcamSandboxPolicy(path -> true)
+                .sandboxLauncherResource()
+                .orElseThrow();
+
+        assertEquals(WindowsWebcamSandboxPolicy.APPCONTAINER_LAUNCHER_FILE_NAME, resource.fileName());
+        assertFalse(resource.requiresExecutableBit());
+    }
+
+    @Test
+    void macOsPolicyUsesStderrLogArgument() {
+        assertEquals("--logToStderr=true", new MacOsWebcamSandboxPolicy(tempDir.resolve("helper"))
+                .logArgument(context(tempDir.resolve("webcam"))));
+    }
 
     @Test
     void removesEnvironmentVariablesOutsideAllowlist() throws Exception {
@@ -123,7 +158,7 @@ public class WebcamSandboxPolicyTest {
     }
 
     @Test
-    void macOsCommandWrapperUsesPackagedHelperApp() throws Exception {
+    void macOsProcessCommandUsesPackagedHelperApp() throws Exception {
         Path helperExecutablePath = tempDir.resolve("BisqWebcam.app")
                 .resolve("Contents")
                 .resolve("MacOS")
@@ -131,32 +166,75 @@ public class WebcamSandboxPolicyTest {
         Files.createDirectories(helperExecutablePath.getParent());
         Files.writeString(helperExecutablePath, "helper");
         assertTrue(helperExecutablePath.toFile().setExecutable(true, true));
-        List<String> command = List.of(
-                "java",
-                "-Xdock:icon=webcam-app-icon.png",
-                "-jar",
-                "webcam-app.jar",
-                "--logToStderr=true",
-                "--languageTag=en");
+        List<String> webcamAppArguments = List.of("--logToStderr=true", "--languageTag=en");
 
-        List<String> wrappedCommand = new MacOsWebcamSandboxPolicy(helperExecutablePath)
-                .wrapCommand(command, context(tempDir.resolve("webcam")));
+        List<String> command = new MacOsWebcamSandboxPolicy(helperExecutablePath)
+                .createProcessCommand("java",
+                        Path.of("webcam-app.jar"),
+                        webcamAppArguments,
+                        context(tempDir.resolve("webcam")));
 
         assertEquals(List.of(
                 helperExecutablePath.toAbsolutePath().toString(),
                 "--logToStderr=true",
-                "--languageTag=en"), wrappedCommand);
+                "--languageTag=en"), command);
     }
 
     @Test
-    void macOsCommandWrapperFailsWhenHelperAppIsMissing() {
-        List<String> command = List.of("java", "-jar", "webcam-app.jar", "--logToStderr=true");
+    void macOsProcessCommandFailsWhenHelperAppIsMissing() {
+        List<String> webcamAppArguments = List.of("--logToStderr=true");
 
         IOException exception = assertThrows(IOException.class,
                 () -> new MacOsWebcamSandboxPolicy(tempDir.resolve("missing-helper"))
-                        .wrapCommand(command, context(tempDir.resolve("webcam"))));
+                        .createProcessCommand("java",
+                                Path.of("webcam-app.jar"),
+                                webcamAppArguments,
+                                context(tempDir.resolve("webcam"))));
 
         assertTrue(exception.getMessage().contains("macOS webcam helper app is missing or not executable"));
+    }
+
+    @Test
+    void windowsProcessCommandFailsWhenAppContainerLauncherIsMissing() {
+        IOException exception = assertThrows(IOException.class,
+                () -> new WindowsWebcamSandboxPolicy(path -> false)
+                        .createProcessCommand("java",
+                                Path.of("webcam-app.jar"),
+                                List.of(),
+                                context(tempDir.resolve("webcam"))));
+
+        assertTrue(exception.getMessage().contains("Windows webcam AppContainer launcher is missing"));
+    }
+
+    @Test
+    void windowsProcessCommandPrependsAppContainerLauncherWhenExecutableLauncherExists() throws Exception {
+        Path webcamDirPath = tempDir.resolve("webcam");
+        Path appContainerLauncherPath = webcamDirPath.resolve(WindowsWebcamSandboxPolicy.APPCONTAINER_LAUNCHER_FILE_NAME);
+        Path jarFilePath = Path.of("webcam-app.jar");
+        List<String> webcamAppArguments = List.of("--logFile=log", "--languageTag=en");
+        WindowsWebcamSandboxPolicy policy = new WindowsWebcamSandboxPolicy(path -> path.equals(appContainerLauncherPath));
+
+        List<String> command = policy.createProcessCommand("java", jarFilePath, webcamAppArguments, context(webcamDirPath));
+
+        int commandSeparatorIndex = command.indexOf("--");
+        assertEquals(appContainerLauncherPath.toAbsolutePath().toString(), command.get(0));
+        assertTrue(command.contains("--profile-name"));
+        assertTrue(command.contains("bisq.webcam"));
+        assertTrue(command.contains("--capability"));
+        assertTrue(command.contains("webcam"));
+        assertTrue(command.contains("--grant-read"));
+        assertTrue(command.contains("--grant-write"));
+        assertTrue(command.contains(webcamDirPath.toAbsolutePath().normalize().toString()));
+        assertTrue(commandSeparatorIndex > 0);
+        assertEquals(List.of(
+                "java",
+                "-Duser.home=" + webcamDirPath.resolve("home").toAbsolutePath(),
+                "-Djava.io.tmpdir=" + webcamDirPath.resolve("tmp").toAbsolutePath(),
+                "-Dorg.bytedeco.javacpp.cachedir=" + webcamDirPath.resolve("javacpp-cache").toAbsolutePath(),
+                "-jar",
+                jarFilePath.toAbsolutePath().toString(),
+                "--logFile=log",
+                "--languageTag=en"), command.subList(commandSeparatorIndex + 1, command.size()));
     }
 
     @Test
@@ -175,7 +253,7 @@ public class WebcamSandboxPolicyTest {
         assertFalse(environment.containsKey("BISQ_SECRET_TOKEN"));
     }
 
-    private WebcamSandboxContext context(Path webcamDirPath) {
-        return new WebcamSandboxContext(webcamDirPath, webcamDirPath.resolve("webcam-app"));
+    private WebcamLaunchContext context(Path webcamDirPath) {
+        return new WebcamLaunchContext(webcamDirPath, webcamDirPath.resolve("webcam-app"));
     }
 }

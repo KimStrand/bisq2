@@ -17,9 +17,16 @@
 
 package bisq.desktop.webcam;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
-final class WindowsWebcamSandboxPolicy extends BaselineWebcamSandboxPolicy {
+final class WindowsWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy {
+    static final String APPCONTAINER_LAUNCHER_FILE_NAME = "bisq-webcam-appcontainer-launcher.exe";
+    private static final String APPCONTAINER_PROFILE_NAME = "bisq.webcam";
+    private static final String WEBCAM_CAPABILITY_NAME = "webcam";
     private static final Set<String> ALLOWED_ENVIRONMENT_VARIABLE_NAMES = allowedEnvironmentVariableNames(
             "APPDATA",
             "CommonProgramFiles",
@@ -37,8 +44,31 @@ final class WindowsWebcamSandboxPolicy extends BaselineWebcamSandboxPolicy {
             "USERPROFILE",
             "WINDIR");
 
+    WindowsWebcamSandboxPolicy() {
+        this(Files::isRegularFile);
+    }
+
+    WindowsWebcamSandboxPolicy(Predicate<Path> appContainerLauncherExecutablePredicate) {
+        super(APPCONTAINER_LAUNCHER_FILE_NAME,
+                false,
+                appContainerLauncherExecutablePredicate,
+                "Windows webcam AppContainer launcher is missing");
+    }
+
     @Override
     protected Set<String> allowedEnvironmentVariableNames() {
         return ALLOWED_ENVIRONMENT_VARIABLE_NAMES;
+    }
+
+    @Override
+    protected void addLauncherArguments(List<String> wrappedCommand, WebcamLaunchContext context) {
+        wrappedCommand.add("--profile-name");
+        wrappedCommand.add(APPCONTAINER_PROFILE_NAME);
+        wrappedCommand.add("--capability");
+        wrappedCommand.add(WEBCAM_CAPABILITY_NAME);
+        wrappedCommand.add("--grant-read");
+        wrappedCommand.add(Path.of(System.getProperty("java.home")).toAbsolutePath().normalize().toString());
+        wrappedCommand.add("--grant-write");
+        wrappedCommand.add(context.webcamDirPath().toAbsolutePath().normalize().toString());
     }
 }

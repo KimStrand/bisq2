@@ -20,9 +20,14 @@ package bisq.desktop.webcam;
 import bisq.common.platform.OS;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 interface WebcamSandboxPolicy {
+    record SandboxLauncherResource(String fileName, boolean requiresExecutableBit) {
+    }
+
     static WebcamSandboxPolicy create() {
         OS os = OS.getOS();
         switch (os) {
@@ -37,15 +42,25 @@ interface WebcamSandboxPolicy {
         }
     }
 
-    default ProcessBuilder createProcessBuilder(List<String> command, WebcamSandboxContext context) throws IOException {
-        ProcessBuilder processBuilder = new ProcessBuilder(wrapCommand(command, context));
+    List<String> createProcessCommand(String javaExecutablePath,
+                                      Path jarFilePath,
+                                      List<String> webcamAppArguments,
+                                      WebcamLaunchContext context) throws IOException;
+
+    default ProcessBuilder createProcessBuilder(List<String> command, WebcamLaunchContext context) throws IOException {
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
         apply(processBuilder, context);
+        configureProcessBuilder(processBuilder, context);
         return processBuilder;
     }
 
-    default List<String> wrapCommand(List<String> command, WebcamSandboxContext context) throws IOException {
-        return List.copyOf(command);
+    default Optional<SandboxLauncherResource> sandboxLauncherResource() {
+        return Optional.empty();
     }
 
-    void apply(ProcessBuilder processBuilder, WebcamSandboxContext context) throws IOException;
+    String logArgument(WebcamLaunchContext context);
+
+    void configureProcessBuilder(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException;
+
+    void apply(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException;
 }

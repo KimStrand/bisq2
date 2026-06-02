@@ -46,16 +46,30 @@ final class MacOsWebcamSandboxPolicy extends BaselineWebcamSandboxPolicy {
     }
 
     @Override
-    public List<String> wrapCommand(List<String> command, WebcamSandboxContext context) throws IOException {
+    public List<String> createProcessCommand(String javaExecutablePath,
+                                             Path jarFilePath,
+                                             List<String> webcamAppArguments,
+                                             WebcamLaunchContext context) throws IOException {
         Path helperExecutablePath = helperExecutablePathOverride.orElseGet(this::packagedHelperExecutablePath);
         if (!Files.isRegularFile(helperExecutablePath) || !Files.isExecutable(helperExecutablePath)) {
             throw new IOException("macOS webcam helper app is missing or not executable: " + helperExecutablePath.toAbsolutePath());
         }
 
-        List<String> wrappedCommand = new ArrayList<>();
-        wrappedCommand.add(helperExecutablePath.toAbsolutePath().toString());
-        wrappedCommand.addAll(webcamAppArguments(command));
-        return List.copyOf(wrappedCommand);
+        List<String> command = new ArrayList<>();
+        command.add(helperExecutablePath.toAbsolutePath().toString());
+        command.addAll(webcamAppArguments);
+        return List.copyOf(command);
+    }
+
+    @Override
+    public String logArgument(WebcamLaunchContext context) {
+        return "--logToStderr=true";
+    }
+
+    @Override
+    public void configureProcessBuilder(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException {
+        Files.createDirectories(context.logFilePath().getParent());
+        processBuilder.redirectError(ProcessBuilder.Redirect.appendTo(Path.of(context.logFilePath().toAbsolutePath() + ".log").toFile()));
     }
 
     private Path packagedHelperExecutablePath() {
@@ -82,13 +96,5 @@ final class MacOsWebcamSandboxPolicy extends BaselineWebcamSandboxPolicy {
             currentPath = currentPath.getParent();
         }
         return Optional.empty();
-    }
-
-    private List<String> webcamAppArguments(List<String> command) throws IOException {
-        int jarArgumentIndex = command.indexOf("-jar");
-        if (jarArgumentIndex < 0 || jarArgumentIndex + 1 >= command.size()) {
-            throw new IOException("Cannot derive webcam app arguments from Java command");
-        }
-        return List.copyOf(command.subList(jarArgumentIndex + 2, command.size()));
     }
 }

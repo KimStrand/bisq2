@@ -23,12 +23,19 @@ val linuxBuildHost = System.getProperty("os.name").lowercase().contains("linux")
 val linuxSandboxLauncherSource = layout.projectDirectory.file("src/main/c/$linuxSandboxLauncherFileName.c")
 val linuxSandboxLauncherOutput = layout.buildDirectory.file("native/linux/$linuxSandboxLauncherFileName")
 
+val windowsAppContainerLauncherFileName = "bisq-webcam-appcontainer-launcher.exe"
+val windowsBuildHost = System.getProperty("os.name").lowercase().contains("win")
+val windowsAppContainerLauncherSource = layout.projectDirectory.file("src/main/c/bisq-webcam-appcontainer-launcher.c")
+val windowsAppContainerLauncherOutput = layout.buildDirectory.file("native/windows/$windowsAppContainerLauncherFileName")
+
 val macOsBuildHost = System.getProperty("os.name").lowercase().contains("mac") ||
         System.getProperty("os.name").lowercase().contains("darwin")
 val macOsWebcamHelperAppName = "BisqWebcam"
 val macOsWebcamHelperOutputDir = layout.buildDirectory.dir("generated/macos-helper")
 val macOsWebcamHelperAppDir = macOsWebcamHelperOutputDir.map { it.dir("$macOsWebcamHelperAppName.app") }
 val macOsWebcamHelperEntitlements = layout.projectDirectory.file("package/macosx/BisqWebcam.entitlements")
+val macOsWebcamHelperIconSource = layout.projectDirectory.file("src/main/resources/images/webcam-app-icon.png")
+val macOsWebcamHelperIconFile = layout.buildDirectory.file("generated/macos-helper-icon/BisqWebcam.icns")
 val jpackageExecutable = javaToolchains.launcherFor {
     languageVersion.set(JavaLanguageVersion.of(21))
 }.map { it.metadata.installationPath.file("bin/jpackage").asFile }
@@ -64,13 +71,97 @@ val compileLinuxSandboxLauncher by tasks.registering(org.gradle.api.tasks.Exec::
     }
 }
 
+val compileWindowsAppContainerLauncher by tasks.registering(org.gradle.api.tasks.Exec::class) {
+    onlyIf { windowsBuildHost }
+    inputs.file(windowsAppContainerLauncherSource)
+    outputs.file(windowsAppContainerLauncherOutput)
+
+    doFirst {
+        windowsAppContainerLauncherOutput.get().asFile.parentFile.mkdirs()
+    }
+
+    commandLine(
+            "cl.exe",
+            "/nologo",
+            "/W4",
+            "/WX",
+            "/O2",
+            "/DUNICODE",
+            "/D_UNICODE",
+            "/D_WIN32_WINNT=0x0602",
+            "/Fe${windowsAppContainerLauncherOutput.get().asFile.absolutePath}",
+            windowsAppContainerLauncherSource.asFile.absolutePath,
+            "userenv.lib",
+            "advapi32.lib"
+    )
+}
+
+fun createMacOsWebcamHelperIcon(iconSourceFile: File, iconSetDir: File, iconOutputFile: File) {
+    val sipsFile = File("/usr/bin/sips")
+    val iconutilFile = File("/usr/bin/iconutil")
+    if (!sipsFile.canExecute()) {
+        throw GradleException("Cannot generate macOS webcam helper icon: /usr/bin/sips is not executable.")
+    }
+    if (!iconutilFile.canExecute()) {
+        throw GradleException("Cannot generate macOS webcam helper icon: /usr/bin/iconutil is not executable.")
+    }
+
+    val iconFiles = listOf(
+            16 to "icon_16x16.png",
+            32 to "icon_16x16@2x.png",
+            32 to "icon_32x32.png",
+            64 to "icon_32x32@2x.png",
+            128 to "icon_128x128.png",
+            256 to "icon_128x128@2x.png",
+            256 to "icon_256x256.png",
+            512 to "icon_256x256@2x.png",
+            512 to "icon_512x512.png",
+            1024 to "icon_512x512@2x.png"
+    )
+    iconFiles.forEach { (size, fileName) ->
+        project.exec {
+            commandLine(
+                    sipsFile.absolutePath,
+                    "-z", size.toString(), size.toString(),
+                    iconSourceFile.absolutePath,
+                    "--out", iconSetDir.resolve(fileName).absolutePath
+            )
+        }
+    }
+
+    project.exec {
+        commandLine(
+                iconutilFile.absolutePath,
+                "-c", "icns",
+                iconSetDir.absolutePath,
+                "-o", iconOutputFile.absolutePath
+        )
+    }
+}
+
+val generateMacOsWebcamHelperIcon by tasks.registering {
+    onlyIf { macOsBuildHost }
+    inputs.file(macOsWebcamHelperIconSource)
+    outputs.file(macOsWebcamHelperIconFile)
+
+    doLast {
+        val iconOutputFile = macOsWebcamHelperIconFile.get().asFile
+        delete(iconOutputFile.parentFile)
+        val iconSetDir = iconOutputFile.parentFile.resolve("BisqWebcam.iconset")
+        iconSetDir.mkdirs()
+        createMacOsWebcamHelperIcon(macOsWebcamHelperIconSource.asFile, iconSetDir, iconOutputFile)
+    }
+}
+
 val generateMacOsWebcamHelperApp by tasks.registering(org.gradle.api.tasks.Exec::class) {
     onlyIf { macOsBuildHost }
 
     val shadowJarTask = tasks.named<ShadowJar>("shadowJar")
     if (macOsBuildHost) {
         dependsOn(shadowJarTask)
+        dependsOn(generateMacOsWebcamHelperIcon)
         inputs.file(shadowJarTask.flatMap { it.archiveFile })
+        inputs.file(macOsWebcamHelperIconFile)
     }
     inputs.file(macOsWebcamHelperEntitlements)
     outputs.dir(macOsWebcamHelperAppDir)
@@ -78,6 +169,8 @@ val generateMacOsWebcamHelperApp by tasks.registering(org.gradle.api.tasks.Exec:
     doFirst {
         delete(macOsWebcamHelperOutputDir)
         macOsWebcamHelperOutputDir.get().asFile.mkdirs()
+
+        val iconOutputFile = macOsWebcamHelperIconFile.get().asFile
         commandLine(
                 jpackageExecutable.get().absolutePath,
                 "--type", "app-image",
@@ -87,7 +180,8 @@ val generateMacOsWebcamHelperApp by tasks.registering(org.gradle.api.tasks.Exec:
                 "--main-jar", shadowJarTask.get().archiveFileName.get(),
                 "--main-class", "bisq.webcam.WebcamAppLauncher",
                 "--app-version", VersionUtil.getVersionFromFile(project),
-                "--mac-package-identifier", "bisq.webcam"
+                "--mac-package-identifier", "bisq.webcam",
+                "--icon", iconOutputFile.absolutePath
         )
     }
 
@@ -222,6 +316,10 @@ tasks {
             dependsOn(compileLinuxSandboxLauncher)
             include(linuxSandboxLauncherFileName)
             from(linuxSandboxLauncherOutput)
+        } else if (windowsBuildHost) {
+            dependsOn(compileWindowsAppContainerLauncher)
+            include(windowsAppContainerLauncherFileName)
+            from(windowsAppContainerLauncherOutput)
         }
     }
 

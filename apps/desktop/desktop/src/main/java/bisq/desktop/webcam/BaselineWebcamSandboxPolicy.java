@@ -18,10 +18,15 @@
 package bisq.desktop.webcam;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -38,7 +43,35 @@ class BaselineWebcamSandboxPolicy implements WebcamSandboxPolicy {
             "TMPDIR");
 
     @Override
-    public void apply(ProcessBuilder processBuilder, WebcamSandboxContext context) throws IOException {
+    public List<String> createProcessCommand(String javaExecutablePath,
+                                             Path jarFilePath,
+                                             List<String> webcamAppArguments,
+                                             WebcamLaunchContext context) throws IOException {
+        List<String> command = new ArrayList<>();
+        command.add(javaExecutablePath);
+        command.addAll(jvmArguments(context));
+        command.add("-jar");
+        command.add(jarFilePath.toAbsolutePath().toString());
+        command.addAll(webcamAppArguments);
+        return List.copyOf(command);
+    }
+
+    protected List<String> jvmArguments(WebcamLaunchContext context) throws IOException {
+        return List.of();
+    }
+
+    @Override
+    public String logArgument(WebcamLaunchContext context) {
+        return "--logFile=" + URLEncoder.encode(context.logFilePath().toAbsolutePath().toString(), StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public void configureProcessBuilder(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException {
+        processBuilder.redirectError(ProcessBuilder.Redirect.DISCARD);
+    }
+
+    @Override
+    public void apply(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException {
         Files.createDirectories(context.webcamDirPath());
         processBuilder.directory(context.webcamDirPath().toFile());
         retainAllowedEnvironment(processBuilder.environment(), allowedEnvironmentVariableNames());
