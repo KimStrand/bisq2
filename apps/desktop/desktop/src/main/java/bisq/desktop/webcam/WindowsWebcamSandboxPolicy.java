@@ -17,6 +17,7 @@
 
 package bisq.desktop.webcam;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -58,6 +59,13 @@ final class WindowsWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy
     @Override
     protected Set<String> allowedEnvironmentVariableNames() {
         return ALLOWED_ENVIRONMENT_VARIABLE_NAMES;
+    }
+
+    @Override
+    public void configureProcessBuilder(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException {
+        Files.createDirectories(context.logFilePath().getParent());
+        Path launcherLogFilePath = context.logFilePath().resolveSibling("webcam-launcher.log");
+        processBuilder.redirectError(ProcessBuilder.Redirect.appendTo(launcherLogFilePath.toFile()));
     }
 
     @Override
