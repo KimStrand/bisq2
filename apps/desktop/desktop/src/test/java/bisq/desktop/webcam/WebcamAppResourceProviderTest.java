@@ -126,6 +126,64 @@ public class WebcamAppResourceProviderTest {
     }
 
     @Test
+    void usesPackagedAppResourcesWhenExtractionIsDisabled() throws IOException {
+        byte[] jarBytes = "packaged-jar".getBytes();
+        byte[] sandboxLauncherBytes = "sandbox-launcher".getBytes();
+        Path jarPath = tempDir.resolve(JAR_FILE_NAME);
+        Files.write(jarPath, jarBytes);
+        Path sandboxLauncherPath = tempDir.resolve(SANDBOX_LAUNCHER_FILE_NAME);
+        Files.write(sandboxLauncherPath, sandboxLauncherBytes);
+        WebcamAppResourceProvider provider = newProviderForZipBytes(zipWithJarAndSandboxLauncherBytes(jarBytes, sandboxLauncherBytes),
+                false);
+        long jarLastModified = Files.getLastModifiedTime(jarPath).toMillis();
+        long sandboxLauncherLastModified = Files.getLastModifiedTime(sandboxLauncherPath).toMillis();
+
+        Path preparedJarPath = provider.prepareWebcamAppResources(VERSION);
+
+        assertEquals(jarPath, preparedJarPath);
+        assertEquals(jarLastModified, Files.getLastModifiedTime(jarPath).toMillis());
+        assertEquals(sandboxLauncherLastModified, Files.getLastModifiedTime(sandboxLauncherPath).toMillis());
+    }
+
+    @Test
+    void usesPackagedAppResourcesWhenExtractionIsDisabledWithoutComparingBundledZip() throws IOException {
+        Path jarPath = tempDir.resolve(JAR_FILE_NAME);
+        Files.write(jarPath, "installed-jar".getBytes());
+        Path sandboxLauncherPath = tempDir.resolve(SANDBOX_LAUNCHER_FILE_NAME);
+        Files.write(sandboxLauncherPath, "installed-launcher".getBytes());
+        WebcamAppResourceProvider provider = newProviderForZipBytes(zipWithJarAndSandboxLauncherBytes(
+                "different-bundled-jar".getBytes(),
+                "different-bundled-launcher".getBytes()), false);
+
+        Path preparedJarPath = provider.prepareWebcamAppResources(VERSION);
+
+        assertEquals(jarPath, preparedJarPath);
+        assertArrayEquals("installed-jar".getBytes(), Files.readAllBytes(jarPath));
+        assertArrayEquals("installed-launcher".getBytes(), Files.readAllBytes(sandboxLauncherPath));
+    }
+
+    @Test
+    void throwsWhenPackagedAppJarIsMissingAndExtractionIsDisabled() throws IOException {
+        byte[] jarBytes = "packaged-jar".getBytes();
+        WebcamAppResourceProvider provider = newProviderForZipBytes(zipWithJarBytes(jarBytes), false);
+
+        assertThrows(IOException.class, () -> provider.prepareWebcamAppResources(VERSION));
+        assertFalse(Files.exists(tempDir.resolve(JAR_FILE_NAME)));
+    }
+
+    @Test
+    void throwsWhenPackagedSandboxLauncherIsMissingAndExtractionIsDisabled() throws IOException {
+        byte[] jarBytes = "packaged-jar".getBytes();
+        byte[] sandboxLauncherBytes = "sandbox-launcher".getBytes();
+        Files.write(tempDir.resolve(JAR_FILE_NAME), jarBytes);
+        WebcamAppResourceProvider provider = newProviderForZipBytes(zipWithJarAndSandboxLauncherBytes(jarBytes, sandboxLauncherBytes),
+                false);
+
+        assertThrows(IOException.class, () -> provider.prepareWebcamAppResources(VERSION));
+        assertFalse(Files.exists(tempDir.resolve(SANDBOX_LAUNCHER_FILE_NAME)));
+    }
+
+    @Test
     void throwsWhenPackagedZipDoesNotContainExpectedJar() throws IOException {
         WebcamAppResourceProvider provider = newProviderForZipBytes(zipWithEntryBytes("readme.txt", "content".getBytes()));
 
@@ -137,7 +195,11 @@ public class WebcamAppResourceProviderTest {
     }
 
     private WebcamAppResourceProvider newProviderForZipBytes(byte[] zipBytes) {
-        return new WebcamAppResourceProvider(tempDir, sandboxPolicy()) {
+        return newProviderForZipBytes(zipBytes, true);
+    }
+
+    private WebcamAppResourceProvider newProviderForZipBytes(byte[] zipBytes, boolean extractionAllowed) {
+        return new WebcamAppResourceProvider(tempDir, sandboxPolicy(), extractionAllowed) {
             @Override
             InputStream openWebcamZipResource(String resourcePath) {
                 assertEquals(RESOURCE_PATH, resourcePath);

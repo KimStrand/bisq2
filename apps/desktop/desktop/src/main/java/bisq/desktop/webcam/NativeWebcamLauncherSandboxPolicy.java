@@ -46,7 +46,7 @@ abstract class NativeWebcamLauncherSandboxPolicy extends BaselineWebcamSandboxPo
                                                    Path jarFilePath,
                                                    List<String> webcamAppArguments,
                                                    WebcamLaunchContext context) throws IOException {
-        Path launcherPath = context.webcamDirPath().resolve(launcherFileName);
+        Path launcherPath = context.webcamAppDirPath().resolve(launcherFileName);
         if (!launcherExecutablePredicate.test(launcherPath)) {
             throw new IOException(missingLauncherMessagePrefix + ": " + launcherPath.toAbsolutePath());
         }
@@ -67,9 +67,9 @@ abstract class NativeWebcamLauncherSandboxPolicy extends BaselineWebcamSandboxPo
 
     @Override
     protected List<String> jvmArguments(WebcamLaunchContext context) throws IOException {
-        Path webcamHomePath = context.webcamDirPath().resolve("home");
-        Path webcamTempPath = context.webcamDirPath().resolve("tmp");
-        Path javaCppCachePath = context.webcamDirPath().resolve("javacpp-cache");
+        Path webcamHomePath = context.webcamDataDirPath().resolve("home");
+        Path webcamTempPath = context.webcamDataDirPath().resolve("tmp");
+        Path javaCppCachePath = context.webcamDataDirPath().resolve("javacpp-cache");
         Files.createDirectories(webcamHomePath);
         Files.createDirectories(webcamTempPath);
         Files.createDirectories(javaCppCachePath);

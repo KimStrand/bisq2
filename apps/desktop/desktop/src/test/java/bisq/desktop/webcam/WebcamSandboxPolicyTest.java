@@ -37,24 +37,28 @@ public class WebcamSandboxPolicyTest {
 
     @Test
     void appliesBaselineWorkingDirectory() throws Exception {
-        Path webcamDirPath = tempDir.resolve("webcam");
+        Path webcamAppDirPath = tempDir.resolve("webcam-app");
+        Path webcamDataDirPath = tempDir.resolve("webcam-data");
         ProcessBuilder processBuilder = new ProcessBuilder("java", "-version");
 
-        new BaselineWebcamSandboxPolicy().apply(processBuilder, context(webcamDirPath));
+        new BaselineWebcamSandboxPolicy().apply(processBuilder, context(webcamAppDirPath, webcamDataDirPath));
 
-        assertTrue(Files.isDirectory(webcamDirPath));
-        assertEquals(webcamDirPath.toFile(), processBuilder.directory());
+        assertFalse(Files.exists(webcamAppDirPath));
+        assertTrue(Files.isDirectory(webcamDataDirPath));
+        assertEquals(webcamDataDirPath.toFile(), processBuilder.directory());
     }
 
     @Test
     void createsProcessBuilderFromCommand() throws Exception {
-        Path webcamDirPath = tempDir.resolve("webcam");
+        Path webcamAppDirPath = tempDir.resolve("webcam-app");
+        Path webcamDataDirPath = tempDir.resolve("webcam-data");
         List<String> command = List.of("java", "-version");
 
-        ProcessBuilder processBuilder = new BaselineWebcamSandboxPolicy().createProcessBuilder(command, context(webcamDirPath));
+        ProcessBuilder processBuilder = new BaselineWebcamSandboxPolicy().createProcessBuilder(command,
+                context(webcamAppDirPath, webcamDataDirPath));
 
         assertEquals(command, processBuilder.command());
-        assertEquals(webcamDirPath.toFile(), processBuilder.directory());
+        assertEquals(webcamDataDirPath.toFile(), processBuilder.directory());
     }
 
     @Test
@@ -71,25 +75,30 @@ public class WebcamSandboxPolicyTest {
 
     @Test
     void linuxProcessCommandPrependsSandboxLauncherAndLandlockRootsWhenExecutableLauncherExists() throws Exception {
-        Path webcamDirPath = tempDir.resolve("webcam");
-        Path sandboxLauncherPath = webcamDirPath.resolve(LinuxWebcamSandboxPolicy.SANDBOX_LAUNCHER_FILE_NAME);
+        Path webcamAppDirPath = tempDir.resolve("webcam-app");
+        Path webcamDataDirPath = tempDir.resolve("webcam-data");
+        Path sandboxLauncherPath = webcamAppDirPath.resolve(LinuxWebcamSandboxPolicy.SANDBOX_LAUNCHER_FILE_NAME);
         Path jarFilePath = Path.of("webcam-app.jar");
         List<String> webcamAppArguments = List.of("--logFile=log", "--languageTag=en");
         LinuxWebcamSandboxPolicy policy = new LinuxWebcamSandboxPolicy(path -> path.equals(sandboxLauncherPath));
 
-        List<String> command = policy.createProcessCommand("java", jarFilePath, webcamAppArguments, context(webcamDirPath));
+        List<String> command = policy.createProcessCommand("java",
+                jarFilePath,
+                webcamAppArguments,
+                context(webcamAppDirPath, webcamDataDirPath));
 
         int commandSeparatorIndex = command.indexOf("--");
         assertEquals(sandboxLauncherPath.toAbsolutePath().toString(), command.get(0));
         assertTrue(command.contains("--read-root"));
-        assertTrue(command.contains(webcamDirPath.toAbsolutePath().normalize().toString()));
+        assertTrue(command.contains(webcamAppDirPath.toAbsolutePath().normalize().toString()));
         assertTrue(command.contains("--write-root"));
+        assertTrue(command.contains(webcamDataDirPath.toAbsolutePath().normalize().toString()));
         assertTrue(commandSeparatorIndex > 0);
         assertEquals(List.of(
                 "java",
-                "-Duser.home=" + webcamDirPath.resolve("home").toAbsolutePath(),
-                "-Djava.io.tmpdir=" + webcamDirPath.resolve("tmp").toAbsolutePath(),
-                "-Dorg.bytedeco.javacpp.cachedir=" + webcamDirPath.resolve("javacpp-cache").toAbsolutePath(),
+                "-Duser.home=" + webcamDataDirPath.resolve("home").toAbsolutePath(),
+                "-Djava.io.tmpdir=" + webcamDataDirPath.resolve("tmp").toAbsolutePath(),
+                "-Dorg.bytedeco.javacpp.cachedir=" + webcamDataDirPath.resolve("javacpp-cache").toAbsolutePath(),
                 "-jar",
                 jarFilePath.toAbsolutePath().toString(),
                 "--logFile=log",
@@ -123,6 +132,12 @@ public class WebcamSandboxPolicyTest {
     }
 
     @Test
+    void windowsPolicyUsesStderrLogArgument() {
+        assertEquals("--logToStderr=true", new WindowsWebcamSandboxPolicy(path -> true)
+                .logArgument(context(tempDir.resolve("webcam"))));
+    }
+
+    @Test
     void removesEnvironmentVariablesOutsideAllowlist() throws Exception {
         ProcessBuilder processBuilder = new ProcessBuilder("java", "-version");
         Map<String, String> environment = processBuilder.environment();
@@ -138,6 +153,7 @@ public class WebcamSandboxPolicyTest {
 
     @Test
     void preservesLinuxGuiEnvironmentVariables() throws Exception {
+        Path webcamDataDirPath = tempDir.resolve("webcam-data");
         ProcessBuilder processBuilder = new ProcessBuilder("java", "-version");
         Map<String, String> environment = processBuilder.environment();
         environment.clear();
@@ -147,13 +163,13 @@ public class WebcamSandboxPolicyTest {
         environment.put("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus");
         environment.put("BISQ_SECRET_TOKEN", "secret");
 
-        new LinuxWebcamSandboxPolicy().apply(processBuilder, context(tempDir.resolve("webcam")));
+        new LinuxWebcamSandboxPolicy().apply(processBuilder, context(tempDir.resolve("webcam-app"), webcamDataDirPath));
 
         assertTrue(environment.containsKey("DISPLAY"));
         assertTrue(environment.containsKey("WAYLAND_DISPLAY"));
         assertTrue(environment.containsKey("XDG_RUNTIME_DIR"));
         assertTrue(environment.containsKey("DBUS_SESSION_BUS_ADDRESS"));
-        assertEquals(tempDir.resolve("webcam").resolve("home").toAbsolutePath().toString(), environment.get("HOME"));
+        assertEquals(webcamDataDirPath.resolve("home").toAbsolutePath().toString(), environment.get("HOME"));
         assertFalse(environment.containsKey("BISQ_SECRET_TOKEN"));
     }
 
@@ -208,13 +224,17 @@ public class WebcamSandboxPolicyTest {
 
     @Test
     void windowsProcessCommandPrependsAppContainerLauncherWhenExecutableLauncherExists() throws Exception {
-        Path webcamDirPath = tempDir.resolve("webcam");
-        Path appContainerLauncherPath = webcamDirPath.resolve(WindowsWebcamSandboxPolicy.APPCONTAINER_LAUNCHER_FILE_NAME);
+        Path webcamAppDirPath = tempDir.resolve("webcam-app");
+        Path webcamDataDirPath = tempDir.resolve("webcam-data");
+        Path appContainerLauncherPath = webcamAppDirPath.resolve(WindowsWebcamSandboxPolicy.APPCONTAINER_LAUNCHER_FILE_NAME);
         Path jarFilePath = Path.of("webcam-app.jar");
-        List<String> webcamAppArguments = List.of("--logFile=log", "--languageTag=en");
+        List<String> webcamAppArguments = List.of("--logToStderr=true", "--languageTag=en");
         WindowsWebcamSandboxPolicy policy = new WindowsWebcamSandboxPolicy(path -> path.equals(appContainerLauncherPath));
 
-        List<String> command = policy.createProcessCommand("java", jarFilePath, webcamAppArguments, context(webcamDirPath));
+        List<String> command = policy.createProcessCommand("java",
+                jarFilePath,
+                webcamAppArguments,
+                context(webcamAppDirPath, webcamDataDirPath));
 
         int commandSeparatorIndex = command.indexOf("--");
         assertEquals(appContainerLauncherPath.toAbsolutePath().toString(), command.get(0));
@@ -223,17 +243,19 @@ public class WebcamSandboxPolicyTest {
         assertTrue(command.contains("--capability"));
         assertTrue(command.contains("webcam"));
         assertTrue(command.contains("--grant-read"));
-        assertTrue(command.contains("--grant-write"));
-        assertTrue(command.contains(webcamDirPath.toAbsolutePath().normalize().toString()));
+        assertFalse(command.contains("--grant-write"));
+        assertTrue(command.contains(webcamAppDirPath.toAbsolutePath().normalize().toString()));
+        assertFalse(command.contains(webcamDataDirPath.toAbsolutePath().normalize().toString()));
+        assertTrue(command.contains("--appcontainer-storage-scope"));
+        assertTrue(command.contains("bisq-test"));
+        assertTrue(command.contains("--javacpp-cache-scope"));
+        assertTrue(command.contains("webcam-app-1.0.0"));
         assertTrue(commandSeparatorIndex > 0);
         assertEquals(List.of(
                 "java",
-                "-Duser.home=" + webcamDirPath.resolve("home").toAbsolutePath(),
-                "-Djava.io.tmpdir=" + webcamDirPath.resolve("tmp").toAbsolutePath(),
-                "-Dorg.bytedeco.javacpp.cachedir=" + webcamDirPath.resolve("javacpp-cache").toAbsolutePath(),
                 "-jar",
                 jarFilePath.toAbsolutePath().toString(),
-                "--logFile=log",
+                "--logToStderr=true",
                 "--languageTag=en"), command.subList(commandSeparatorIndex + 1, command.size()));
     }
 
@@ -254,6 +276,14 @@ public class WebcamSandboxPolicyTest {
     }
 
     private WebcamLaunchContext context(Path webcamDirPath) {
-        return new WebcamLaunchContext(webcamDirPath, webcamDirPath.resolve("webcam-app"));
+        return context(webcamDirPath, webcamDirPath);
+    }
+
+    private WebcamLaunchContext context(Path webcamAppDirPath, Path webcamDataDirPath) {
+        return new WebcamLaunchContext(webcamAppDirPath,
+                webcamDataDirPath,
+                webcamDataDirPath.resolve("webcam-app"),
+                "bisq-test",
+                "1.0.0");
     }
 }

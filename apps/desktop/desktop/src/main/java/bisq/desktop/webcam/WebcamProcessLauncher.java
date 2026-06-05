@@ -35,25 +35,34 @@ import static bisq.common.threading.ExecutorFactory.commonForkJoinPool;
 
 @Slf4j
 public class WebcamProcessLauncher {
-    private final Path webcamDirPath;
+    private final Path webcamAppDirPath;
+    private final Path webcamDataDirPath;
     private final WebcamAppResourceProvider webcamAppResourceProvider;
     private final WebcamSandboxPolicy sandboxPolicy;
     private Optional<Process> runningProcess = Optional.empty();
 
     public WebcamProcessLauncher(Path appDataDirPath) {
-        this.webcamDirPath = appDataDirPath.resolve("webcam");
         this.sandboxPolicy = WebcamSandboxPolicy.create();
-        this.webcamAppResourceProvider = new WebcamAppResourceProvider(webcamDirPath, sandboxPolicy);
+        this.webcamDataDirPath = appDataDirPath.resolve("webcam");
+        this.webcamAppDirPath = sandboxPolicy.packagedWebcamAppDirPath().orElse(webcamDataDirPath);
+        this.webcamAppResourceProvider = new WebcamAppResourceProvider(webcamAppDirPath,
+                sandboxPolicy,
+                webcamAppDirPath.equals(webcamDataDirPath));
     }
 
     public CompletableFuture<Process> start(String sessionSecret) {
         ExecutorService launchExecutor = ExecutorFactory.newSingleThreadExecutor("WebcamProcessLauncher");
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Path jarFilePath = webcamAppResourceProvider.prepareWebcamAppResources();
+                String webcamAppVersion = webcamAppResourceProvider.webcamAppVersion();
+                Path jarFilePath = webcamAppResourceProvider.prepareWebcamAppResources(webcamAppVersion);
 
-                Path logFilePath = webcamDirPath.resolve("webcam-app");
-                WebcamLaunchContext launchContext = new WebcamLaunchContext(webcamDirPath, logFilePath);
+                Path logFilePath = webcamDataDirPath.resolve("webcam-app");
+                WebcamLaunchContext launchContext = new WebcamLaunchContext(webcamAppDirPath,
+                        webcamDataDirPath,
+                        logFilePath,
+                        appName(),
+                        webcamAppVersion);
                 List<String> webcamAppArguments = createWebcamAppArguments(launchContext);
 
                 String pathToJavaExe = System.getProperty("java.home") + "/bin/java";
@@ -73,6 +82,15 @@ public class WebcamProcessLauncher {
                 throw new RuntimeException(e);
             }
         }, launchExecutor).whenComplete((process, throwable) -> launchExecutor.shutdown());
+    }
+
+    private String appName() {
+        Path appDataDirPath = webcamDataDirPath.getParent();
+        Path appNamePath = appDataDirPath == null ? null : appDataDirPath.getFileName();
+        if (appNamePath == null) {
+            throw new IllegalStateException("Cannot derive webcam AppContainer storage scope from app data path");
+        }
+        return appNamePath.toString();
     }
 
     private List<String> createWebcamAppArguments(WebcamLaunchContext launchContext) {

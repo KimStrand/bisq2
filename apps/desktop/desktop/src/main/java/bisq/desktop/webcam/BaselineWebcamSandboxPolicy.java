@@ -72,8 +72,8 @@ class BaselineWebcamSandboxPolicy implements WebcamSandboxPolicy {
 
     @Override
     public void apply(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException {
-        Files.createDirectories(context.webcamDirPath());
-        processBuilder.directory(context.webcamDirPath().toFile());
+        Files.createDirectories(context.webcamDataDirPath());
+        processBuilder.directory(context.webcamDataDirPath().toFile());
         retainAllowedEnvironment(processBuilder.environment(), allowedEnvironmentVariableNames());
     }
 

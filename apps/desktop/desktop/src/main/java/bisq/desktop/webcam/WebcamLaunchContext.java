@@ -19,5 +19,9 @@ package bisq.desktop.webcam;
 
 import java.nio.file.Path;
 
-record WebcamLaunchContext(Path webcamDirPath, Path logFilePath) {
+record WebcamLaunchContext(Path webcamAppDirPath,
+                           Path webcamDataDirPath,
+                           Path logFilePath,
+                           String appName,
+                           String webcamAppVersion) {
 }

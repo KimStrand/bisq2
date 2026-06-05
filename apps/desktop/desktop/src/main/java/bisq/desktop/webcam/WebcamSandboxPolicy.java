@@ -58,6 +58,10 @@ interface WebcamSandboxPolicy {
         return Optional.empty();
     }
 
+    default Optional<Path> packagedWebcamAppDirPath() {
+        return Optional.empty();
+    }
+
     String logArgument(WebcamLaunchContext context);
 
     void configureProcessBuilder(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException;

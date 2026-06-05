@@ -20,7 +20,9 @@ package bisq.desktop.webcam;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -28,6 +30,9 @@ final class WindowsWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy
     static final String APPCONTAINER_LAUNCHER_FILE_NAME = "bisq-webcam-appcontainer-launcher.exe";
     private static final String APPCONTAINER_PROFILE_NAME = "bisq.webcam";
     private static final String WEBCAM_CAPABILITY_NAME = "webcam";
+    private static final String JAVACPP_CACHE_SCOPE_PREFIX = "webcam-app-";
+    private static final String APP_CONTENT_DIR_NAME = "app";
+    private static final String WEBCAM_APP_CONTENT_DIR_NAME = "webcam";
     private static final Set<String> ALLOWED_ENVIRONMENT_VARIABLE_NAMES = allowedEnvironmentVariableNames(
             "APPDATA",
             "CommonProgramFiles",
@@ -44,21 +49,42 @@ final class WindowsWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy
             "SystemRoot",
             "USERPROFILE",
             "WINDIR");
+    private final Optional<Path> packagedWebcamAppDirPathOverride;
 
     WindowsWebcamSandboxPolicy() {
         this(Files::isRegularFile);
     }
 
     WindowsWebcamSandboxPolicy(Predicate<Path> appContainerLauncherExecutablePredicate) {
+        this(appContainerLauncherExecutablePredicate, Optional.empty());
+    }
+
+    WindowsWebcamSandboxPolicy(Predicate<Path> appContainerLauncherExecutablePredicate,
+                               Optional<Path> packagedWebcamAppDirPathOverride) {
         super(APPCONTAINER_LAUNCHER_FILE_NAME,
                 false,
                 appContainerLauncherExecutablePredicate,
                 "Windows webcam AppContainer launcher is missing");
+        this.packagedWebcamAppDirPathOverride = packagedWebcamAppDirPathOverride;
     }
 
     @Override
     protected Set<String> allowedEnvironmentVariableNames() {
         return ALLOWED_ENVIRONMENT_VARIABLE_NAMES;
+    }
+
+    @Override
+    public Optional<Path> packagedWebcamAppDirPath() {
+        if (packagedWebcamAppDirPathOverride.isPresent()) {
+            return packagedWebcamAppDirPathOverride;
+        }
+
+        for (Path candidate : packagedWebcamAppDirPathCandidates()) {
+            if (Files.isDirectory(candidate)) {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
     }
 
     @Override
@@ -69,6 +95,16 @@ final class WindowsWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy
     }
 
     @Override
+    public String logArgument(WebcamLaunchContext context) {
+        return "--logToStderr=true";
+    }
+
+    @Override
+    protected List<String> jvmArguments(WebcamLaunchContext context) {
+        return List.of();
+    }
+
+    @Override
     protected void addLauncherArguments(List<String> wrappedCommand, WebcamLaunchContext context) {
         wrappedCommand.add("--profile-name");
         wrappedCommand.add(APPCONTAINER_PROFILE_NAME);
@@ -76,7 +112,43 @@ final class WindowsWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy
         wrappedCommand.add(WEBCAM_CAPABILITY_NAME);
         wrappedCommand.add("--grant-read");
         wrappedCommand.add(Path.of(System.getProperty("java.home")).toAbsolutePath().normalize().toString());
-        wrappedCommand.add("--grant-write");
-        wrappedCommand.add(context.webcamDirPath().toAbsolutePath().normalize().toString());
+        wrappedCommand.add("--grant-read");
+        wrappedCommand.add(context.webcamAppDirPath().toAbsolutePath().normalize().toString());
+        wrappedCommand.add("--appcontainer-storage-scope");
+        wrappedCommand.add(context.appName());
+        wrappedCommand.add("--javacpp-cache-scope");
+        wrappedCommand.add(JAVACPP_CACHE_SCOPE_PREFIX + context.webcamAppVersion());
+    }
+
+    private List<Path> packagedWebcamAppDirPathCandidates() {
+        List<Path> candidates = new ArrayList<>();
+        ProcessHandle.current()
+                .info()
+                .command()
+                .map(Path::of)
+                .map(Path::toAbsolutePath)
+                .map(Path::getParent)
+                .ifPresent(path -> addAppContentCandidates(candidates, path));
+
+        Path javaHomePath = Path.of(System.getProperty("java.home")).toAbsolutePath();
+        Path javaHomeParentPath = javaHomePath.getParent();
+        if (javaHomeParentPath != null) {
+            addAppContentCandidates(candidates, javaHomeParentPath);
+        }
+        return List.copyOf(candidates);
+    }
+
+    private void addAppContentCandidates(List<Path> candidates, Path appImageDirPath) {
+        Path appDirPath = appImageDirPath.resolve(APP_CONTENT_DIR_NAME).resolve(WEBCAM_APP_CONTENT_DIR_NAME);
+        Path rootDirPath = appImageDirPath.resolve(WEBCAM_APP_CONTENT_DIR_NAME);
+        addCandidate(candidates, appDirPath);
+        addCandidate(candidates, rootDirPath);
+    }
+
+    private void addCandidate(List<Path> candidates, Path candidate) {
+        Path normalizedCandidate = candidate.toAbsolutePath().normalize();
+        if (!candidates.contains(normalizedCandidate)) {
+            candidates.add(normalizedCandidate);
+        }
     }
 }

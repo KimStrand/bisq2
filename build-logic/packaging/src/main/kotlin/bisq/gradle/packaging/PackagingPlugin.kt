@@ -56,10 +56,21 @@ class PackagingPlugin @Inject constructor(private val javaToolchainService: Java
                     val processWebcamForDesktopProvider = webcam.tasks.named("processWebcamForDesktop")
                     processResourcesInDesktop.get().dependsOn(processWebcamForDesktopProvider)
                     dependsOn(processWebcamForDesktopProvider)
-                    if (getOS() == OS.MAC_OS) {
-                        val generateMacOsWebcamHelperAppProvider = webcam.tasks.named("generateMacOsWebcamHelperApp")
-                        dependsOn(generateMacOsWebcamHelperAppProvider)
-                        appContentFiles.from(webcam.layout.buildDirectory.dir("generated/macos-helper/BisqWebcam.app"))
+                    when (getOS()) {
+                        OS.MAC_OS -> {
+                            val generateMacOsWebcamHelperAppProvider = webcam.tasks.named("generateMacOsWebcamHelperApp")
+                            dependsOn(generateMacOsWebcamHelperAppProvider)
+                            appContentFiles.from(webcam.layout.buildDirectory.dir("generated/macos-helper/BisqWebcam.app"))
+                        }
+
+                        OS.WINDOWS -> {
+                            val prepareWindowsWebcamAppContentProvider = webcam.tasks.named("prepareWindowsWebcamAppContent")
+                            dependsOn(prepareWindowsWebcamAppContentProvider)
+                            appContentFiles.from(webcam.layout.buildDirectory.dir("packaging/windows-app-content/webcam"))
+                        }
+
+                        else -> {
+                        }
                     }
                 }
             }

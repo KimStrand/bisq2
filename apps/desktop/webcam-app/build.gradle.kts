@@ -27,6 +27,7 @@ val windowsAppContainerLauncherFileName = "bisq-webcam-appcontainer-launcher.exe
 val windowsBuildHost = System.getProperty("os.name").lowercase().contains("win")
 val windowsAppContainerLauncherSource = layout.projectDirectory.file("src/main/c/bisq-webcam-appcontainer-launcher.c")
 val windowsAppContainerLauncherOutput = layout.buildDirectory.file("native/windows/$windowsAppContainerLauncherFileName")
+val windowsWebcamAppContentDir = layout.buildDirectory.dir("packaging/windows-app-content/webcam")
 
 val macOsBuildHost = System.getProperty("os.name").lowercase().contains("mac") ||
         System.getProperty("os.name").lowercase().contains("darwin")
@@ -92,7 +93,8 @@ val compileWindowsAppContainerLauncher by tasks.registering(org.gradle.api.tasks
             "/Fe${windowsAppContainerLauncherOutput.get().asFile.absolutePath}",
             windowsAppContainerLauncherSource.asFile.absolutePath,
             "userenv.lib",
-            "advapi32.lib"
+            "advapi32.lib",
+            "ole32.lib"
     )
 }
 
@@ -201,6 +203,17 @@ val generateMacOsWebcamHelperApp by tasks.registering(org.gradle.api.tasks.Exec:
             )
         }
     }
+}
+
+val prepareWindowsWebcamAppContent by tasks.registering(org.gradle.api.tasks.Sync::class) {
+    onlyIf { windowsBuildHost }
+
+    val shadowJarTask = tasks.named<ShadowJar>("shadowJar")
+    dependsOn(shadowJarTask)
+    dependsOn(compileWindowsAppContainerLauncher)
+    from(shadowJarTask.flatMap { it.archiveFile })
+    from(windowsAppContainerLauncherOutput)
+    into(windowsWebcamAppContentDir)
 }
 
 javafx {

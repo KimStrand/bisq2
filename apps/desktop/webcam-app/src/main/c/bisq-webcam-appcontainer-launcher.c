@@ -22,11 +22,13 @@
 
 #include <windows.h>
 #include <aclapi.h>
+#include <objbase.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sddl.h>
 #include <userenv.h>
 #include <wchar.h>
 
@@ -34,6 +36,7 @@
 #define MAX_GRANT_ROOTS 32
 #define DEFAULT_PROFILE_NAME L"bisq.webcam"
 #define DEFAULT_CAPABILITY_NAME L"webcam"
+#define APPCONTAINER_PARENT_DIRECTORY_ACCESS (GENERIC_READ | GENERIC_EXECUTE)
 
 struct launcher_options {
     const wchar_t *profile_name;
@@ -43,8 +46,22 @@ struct launcher_options {
     DWORD read_root_count;
     const wchar_t *write_roots[MAX_GRANT_ROOTS];
     DWORD write_root_count;
+    const wchar_t *appcontainer_storage_scope;
+    const wchar_t *javacpp_cache_scope;
     int command_index;
 };
+
+struct appcontainer_java_directories {
+    wchar_t *scope_path;
+    wchar_t *home_path;
+    wchar_t *temp_path;
+    wchar_t *javacpp_cache_path;
+    wchar_t *user_home_argument;
+    wchar_t *temp_argument;
+    wchar_t *javacpp_cache_argument;
+};
+
+static bool grant_path_tree_access(PSID appcontainer_sid, const wchar_t *path, DWORD access_permissions);
 
 struct wide_buffer {
     wchar_t *data;
@@ -61,13 +78,14 @@ typedef BOOL(WINAPI *derive_capability_sids_from_name_func)(LPCWSTR,
 static void print_usage(void) {
     fputws(L"Usage: bisq-webcam-appcontainer-launcher.exe "
            L"[--profile-name <name>] [--capability <name>] "
-           L"[--grant-read <path>] [--grant-write <path>] -- <command> [args...]\n",
+           L"[--grant-read <path>] [--grant-write <path>] "
+           L"[--appcontainer-storage-scope <name>] [--javacpp-cache-scope <name>] "
+           L"-- <command> [args...]\n",
            stderr);
     fputws(L"       bisq-webcam-appcontainer-launcher.exe --diagnose\n", stderr);
 }
 
-static void print_last_error(const wchar_t *message) {
-    DWORD error = GetLastError();
+static void print_error_details(DWORD error) {
     wchar_t *formatted_message = NULL;
     FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER |
                    FORMAT_MESSAGE_FROM_SYSTEM |
@@ -78,13 +96,27 @@ static void print_last_error(const wchar_t *message) {
                    (LPWSTR)&formatted_message,
                    0,
                    NULL);
-    fwprintf(stderr, L"%ls: error=%lu", message, error);
+    fwprintf(stderr, L"error=%lu", error);
     if (formatted_message != NULL) {
         fwprintf(stderr, L" %ls", formatted_message);
         LocalFree(formatted_message);
     } else {
         fputwc(L'\n', stderr);
     }
+}
+
+static void print_error_code(const wchar_t *message, DWORD error) {
+    fwprintf(stderr, L"%ls: ", message);
+    print_error_details(error);
+}
+
+static void print_last_error(const wchar_t *message) {
+    print_error_code(message, GetLastError());
+}
+
+static void print_path_error(const wchar_t *message, const wchar_t *path, DWORD error) {
+    fwprintf(stderr, L"%ls: path=\"%ls\" ", message, path);
+    print_error_details(error);
 }
 
 static void print_hresult(const wchar_t *message, HRESULT result) {
@@ -159,6 +191,24 @@ static bool parse_launcher_options(int argc, wchar_t *argv[], struct launcher_op
             index += 2;
             continue;
         }
+        if (wcscmp(argv[index], L"--appcontainer-storage-scope") == 0) {
+            if (index + 1 >= argc) {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return false;
+            }
+            options->appcontainer_storage_scope = argv[index + 1];
+            index += 2;
+            continue;
+        }
+        if (wcscmp(argv[index], L"--javacpp-cache-scope") == 0) {
+            if (index + 1 >= argc) {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return false;
+            }
+            options->javacpp_cache_scope = argv[index + 1];
+            index += 2;
+            continue;
+        }
 
         options->command_index = index;
         break;
@@ -169,6 +219,10 @@ static bool parse_launcher_options(int argc, wchar_t *argv[], struct launcher_op
         return false;
     }
     if (options->capability_count == 0 && !add_capability(options, DEFAULT_CAPABILITY_NAME)) {
+        return false;
+    }
+    if ((options->appcontainer_storage_scope == NULL) != (options->javacpp_cache_scope == NULL)) {
+        SetLastError(ERROR_INVALID_PARAMETER);
         return false;
     }
     return true;
@@ -253,10 +307,15 @@ static HRESULT create_or_get_appcontainer_sid(const wchar_t *profile_name,
     return result;
 }
 
-static DWORD grant_path_access(PSID appcontainer_sid, const wchar_t *path, DWORD access_permissions) {
+static DWORD grant_path_access(PSID appcontainer_sid,
+                               const wchar_t *path,
+                               DWORD access_permissions,
+                               DWORD directory_inheritance) {
     DWORD attributes = GetFileAttributesW(path);
     if (attributes == INVALID_FILE_ATTRIBUTES) {
-        return GetLastError();
+        DWORD result = GetLastError();
+        print_path_error(L"Failed to read AppContainer grant target attributes", path, result);
+        return result;
     }
 
     PACL existing_dacl = NULL;
@@ -271,6 +330,7 @@ static DWORD grant_path_access(PSID appcontainer_sid, const wchar_t *path, DWORD
                                          NULL,
                                          &security_descriptor);
     if (result != ERROR_SUCCESS) {
+        print_path_error(L"Failed to read AppContainer grant target DACL", path, result);
         return result;
     }
 
@@ -279,7 +339,7 @@ static DWORD grant_path_access(PSID appcontainer_sid, const wchar_t *path, DWORD
     access.grfAccessPermissions = access_permissions;
     access.grfAccessMode = GRANT_ACCESS;
     access.grfInheritance = (attributes & FILE_ATTRIBUTE_DIRECTORY)
-                            ? (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE)
+                            ? directory_inheritance
                             : NO_INHERITANCE;
     access.Trustee.TrusteeForm = TRUSTEE_IS_SID;
     access.Trustee.TrusteeType = TRUSTEE_IS_USER;
@@ -294,6 +354,11 @@ static DWORD grant_path_access(PSID appcontainer_sid, const wchar_t *path, DWORD
                                        NULL,
                                        new_dacl,
                                        NULL);
+        if (result != ERROR_SUCCESS) {
+            print_path_error(L"Failed to apply AppContainer grant target DACL", path, result);
+        }
+    } else {
+        print_path_error(L"Failed to build AppContainer grant target DACL", path, result);
     }
 
     if (new_dacl != NULL) {
@@ -305,6 +370,158 @@ static DWORD grant_path_access(PSID appcontainer_sid, const wchar_t *path, DWORD
     return result;
 }
 
+
+static bool is_directory_separator(wchar_t value) {
+    return value == L'\\' || value == L'/';
+}
+
+static bool is_drive_letter(wchar_t value) {
+    return (value >= L'A' && value <= L'Z') || (value >= L'a' && value <= L'z');
+}
+
+static bool is_drive_root_path(const wchar_t *path, size_t length) {
+    return length == 3 && is_drive_letter(path[0]) && path[1] == L':' && is_directory_separator(path[2]);
+}
+
+static bool is_unc_root_path(const wchar_t *path, size_t length) {
+    if (length < 5 || !is_directory_separator(path[0]) || !is_directory_separator(path[1])) {
+        return false;
+    }
+
+    size_t server_separator_index = 2;
+    while (server_separator_index < length && !is_directory_separator(path[server_separator_index])) {
+        server_separator_index++;
+    }
+    if (server_separator_index == length || server_separator_index == 2) {
+        return false;
+    }
+
+    size_t share_separator_index = server_separator_index + 1;
+    while (share_separator_index < length && !is_directory_separator(path[share_separator_index])) {
+        share_separator_index++;
+    }
+    return share_separator_index == length || share_separator_index == length - 1;
+}
+
+static bool is_root_path(const wchar_t *path, size_t length) {
+    return is_drive_root_path(path, length) || is_unc_root_path(path, length);
+}
+
+static void trim_trailing_directory_separators(wchar_t *path) {
+    size_t length = wcslen(path);
+    while (length > 0 && is_directory_separator(path[length - 1]) && !is_root_path(path, length)) {
+        path[--length] = L'\0';
+    }
+}
+
+static wchar_t *duplicate_string(const wchar_t *value) {
+    size_t length = wcslen(value);
+    if (length > SIZE_MAX / sizeof(wchar_t) - 1) {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return NULL;
+    }
+
+    wchar_t *copy = malloc((length + 1) * sizeof(wchar_t));
+    if (copy == NULL) {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return NULL;
+    }
+
+    memcpy(copy, value, (length + 1) * sizeof(wchar_t));
+    return copy;
+}
+
+static bool truncate_to_parent_path(wchar_t *path) {
+    trim_trailing_directory_separators(path);
+    size_t length = wcslen(path);
+    if (length == 0 || is_root_path(path, length)) {
+        return false;
+    }
+
+    for (size_t index = length; index > 0; index--) {
+        size_t separator_index = index - 1;
+        if (!is_directory_separator(path[separator_index])) {
+            continue;
+        }
+        if (separator_index == 2 && path[1] == L':') {
+            path[3] = L'\0';
+        } else {
+            path[separator_index] = L'\0';
+        }
+        return true;
+    }
+    return false;
+}
+
+static wchar_t *get_user_profile_path(void) {
+    DWORD length = GetEnvironmentVariableW(L"USERPROFILE", NULL, 0);
+    if (length == 0) {
+        return NULL;
+    }
+
+    wchar_t *user_profile_path = malloc(length * sizeof(wchar_t));
+    if (user_profile_path == NULL) {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return NULL;
+    }
+
+    DWORD written_length = GetEnvironmentVariableW(L"USERPROFILE", user_profile_path, length);
+    if (written_length == 0 || written_length >= length) {
+        free(user_profile_path);
+        return NULL;
+    }
+    trim_trailing_directory_separators(user_profile_path);
+    return user_profile_path;
+}
+
+static bool paths_equal_ignore_case(const wchar_t *left, const wchar_t *right) {
+    return CompareStringOrdinal(left, -1, right, -1, TRUE) == CSTR_EQUAL;
+}
+
+static bool grant_parent_directory_access(PSID appcontainer_sid, const wchar_t *path) {
+    wchar_t *parent_path = duplicate_string(path);
+    if (parent_path == NULL) {
+        return false;
+    }
+
+    wchar_t *user_profile_path = get_user_profile_path();
+    bool success = true;
+    while (truncate_to_parent_path(parent_path)) {
+        size_t parent_path_length = wcslen(parent_path);
+        if (is_root_path(parent_path, parent_path_length)) {
+            break;
+        }
+
+        DWORD attributes = GetFileAttributesW(parent_path);
+        if (attributes == INVALID_FILE_ATTRIBUTES) {
+            DWORD result = GetLastError();
+            print_path_error(L"Failed to read AppContainer grant parent directory attributes", parent_path, result);
+            SetLastError(result);
+            success = false;
+            break;
+        }
+
+        if ((attributes & FILE_ATTRIBUTE_DIRECTORY) && !(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            DWORD result = grant_path_access(appcontainer_sid,
+                                             parent_path,
+                                             APPCONTAINER_PARENT_DIRECTORY_ACCESS,
+                                             NO_INHERITANCE);
+            if (result != ERROR_SUCCESS) {
+                SetLastError(result);
+                success = false;
+                break;
+            }
+        }
+
+        if (user_profile_path != NULL && paths_equal_ignore_case(parent_path, user_profile_path)) {
+            break;
+        }
+    }
+
+    free(user_profile_path);
+    free(parent_path);
+    return success;
+}
 
 static bool is_dot_directory(const wchar_t *file_name) {
     return wcscmp(file_name, L".") == 0 || wcscmp(file_name, L"..") == 0;
@@ -338,8 +555,191 @@ static wchar_t *join_child_path(const wchar_t *parent_path, const wchar_t *file_
     return child_path;
 }
 
+static wchar_t *join_prefix_value(const wchar_t *prefix, const wchar_t *value) {
+    size_t prefix_length = wcslen(prefix);
+    size_t value_length = wcslen(value);
+    size_t result_length = prefix_length + value_length;
+    if (result_length > SIZE_MAX / sizeof(wchar_t) - 1) {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return NULL;
+    }
+
+    wchar_t *result = malloc((result_length + 1) * sizeof(wchar_t));
+    if (result == NULL) {
+        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+        return NULL;
+    }
+
+    memcpy(result, prefix, prefix_length * sizeof(wchar_t));
+    memcpy(result + prefix_length, value, value_length * sizeof(wchar_t));
+    result[result_length] = L'\0';
+    return result;
+}
+
+static bool is_invalid_path_segment_character(wchar_t value) {
+    return value < 32 || wcschr(L"<>:\"/\\|?*", value) != NULL;
+}
+
+static bool is_valid_path_segment(const wchar_t *value) {
+    size_t length = wcslen(value);
+    if (length == 0 || wcscmp(value, L".") == 0 || wcscmp(value, L"..") == 0) {
+        return false;
+    }
+    if (value[length - 1] == L'.' || value[length - 1] == L' ') {
+        return false;
+    }
+
+    for (size_t index = 0; index < length; index++) {
+        if (is_invalid_path_segment_character(value[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool ensure_directory_exists(const wchar_t *path) {
+    if (CreateDirectoryW(path, NULL)) {
+        return true;
+    }
+
+    DWORD create_error = GetLastError();
+    if (create_error != ERROR_ALREADY_EXISTS) {
+        print_path_error(L"Failed to create AppContainer storage directory", path, create_error);
+        SetLastError(create_error);
+        return false;
+    }
+
+    DWORD attributes = GetFileAttributesW(path);
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        DWORD attribute_error = GetLastError();
+        print_path_error(L"Failed to read AppContainer storage directory attributes", path, attribute_error);
+        SetLastError(attribute_error);
+        return false;
+    }
+    if (!(attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+        print_path_error(L"AppContainer storage path is not a directory", path, ERROR_DIRECTORY);
+        SetLastError(ERROR_DIRECTORY);
+        return false;
+    }
+    return true;
+}
+
+static void free_appcontainer_java_directories(struct appcontainer_java_directories *directories) {
+    free(directories->scope_path);
+    free(directories->home_path);
+    free(directories->temp_path);
+    free(directories->javacpp_cache_path);
+    free(directories->user_home_argument);
+    free(directories->temp_argument);
+    free(directories->javacpp_cache_argument);
+    ZeroMemory(directories, sizeof(*directories));
+}
+
+static bool prepare_appcontainer_java_directories(PSID appcontainer_sid,
+                                                 const wchar_t *storage_scope,
+                                                 const wchar_t *javacpp_cache_scope,
+                                                 struct appcontainer_java_directories *directories) {
+    ZeroMemory(directories, sizeof(*directories));
+
+    if (!is_valid_path_segment(storage_scope)) {
+        fwprintf(stderr, L"Invalid AppContainer storage scope: \"%ls\"\n", storage_scope);
+        SetLastError(ERROR_INVALID_NAME);
+        return false;
+    }
+    if (!is_valid_path_segment(javacpp_cache_scope)) {
+        fwprintf(stderr, L"Invalid JavaCPP cache scope: \"%ls\"\n", javacpp_cache_scope);
+        SetLastError(ERROR_INVALID_NAME);
+        return false;
+    }
+
+    LPWSTR appcontainer_sid_string = NULL;
+    if (!ConvertSidToStringSidW(appcontainer_sid, &appcontainer_sid_string)) {
+        print_last_error(L"Failed to convert AppContainer SID to string");
+        return false;
+    }
+
+    PWSTR appcontainer_folder_path = NULL;
+    HRESULT result = GetAppContainerFolderPath(appcontainer_sid_string, &appcontainer_folder_path);
+    LocalFree(appcontainer_sid_string);
+    if (FAILED(result)) {
+        print_hresult(L"Failed to resolve AppContainer storage folder", result);
+        return false;
+    }
+
+    wchar_t *base_path = duplicate_string(appcontainer_folder_path);
+    CoTaskMemFree(appcontainer_folder_path);
+    if (base_path == NULL) {
+        return false;
+    }
+    trim_trailing_directory_separators(base_path);
+
+    bool success = false;
+    wchar_t *javacpp_cache_root_path = NULL;
+    wchar_t *javacpp_cache_relative_path = NULL;
+    directories->scope_path = join_child_path(base_path, storage_scope);
+    directories->home_path = directories->scope_path == NULL ? NULL : join_child_path(directories->scope_path, L"home");
+    directories->temp_path = directories->scope_path == NULL ? NULL : join_child_path(directories->scope_path, L"tmp");
+    javacpp_cache_root_path = directories->scope_path == NULL ? NULL : join_child_path(directories->scope_path, L"javacpp-cache");
+    javacpp_cache_relative_path = join_child_path(L"javacpp-cache", javacpp_cache_scope);
+    directories->javacpp_cache_path = javacpp_cache_root_path == NULL ? NULL : join_child_path(javacpp_cache_root_path,
+                                                                                               javacpp_cache_scope);
+    directories->user_home_argument = directories->home_path == NULL ? NULL : join_prefix_value(L"-Duser.home=",
+                                                                                                directories->home_path);
+    directories->temp_argument = directories->temp_path == NULL ? NULL : join_prefix_value(L"-Djava.io.tmpdir=",
+                                                                                           directories->temp_path);
+    directories->javacpp_cache_argument = javacpp_cache_relative_path == NULL
+                                          ? NULL
+                                          : join_prefix_value(L"-Dorg.bytedeco.javacpp.cachedir=",
+                                                              javacpp_cache_relative_path);
+
+    if (directories->scope_path == NULL ||
+            directories->home_path == NULL ||
+            directories->temp_path == NULL ||
+            javacpp_cache_root_path == NULL ||
+            javacpp_cache_relative_path == NULL ||
+            directories->javacpp_cache_path == NULL ||
+            directories->user_home_argument == NULL ||
+            directories->temp_argument == NULL ||
+            directories->javacpp_cache_argument == NULL) {
+        goto cleanup;
+    }
+
+    if (!ensure_directory_exists(base_path) ||
+            !ensure_directory_exists(directories->scope_path) ||
+            !ensure_directory_exists(directories->home_path) ||
+            !ensure_directory_exists(directories->temp_path) ||
+            !ensure_directory_exists(javacpp_cache_root_path) ||
+            !ensure_directory_exists(directories->javacpp_cache_path)) {
+        goto cleanup;
+    }
+    if (!grant_parent_directory_access(appcontainer_sid, directories->scope_path)) {
+        print_last_error(L"Failed to grant AppContainer storage parent directory access");
+        goto cleanup;
+    }
+    if (!grant_path_tree_access(appcontainer_sid,
+                                directories->scope_path,
+                                GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | DELETE)) {
+        print_last_error(L"Failed to grant AppContainer storage directory access");
+        goto cleanup;
+    }
+
+    success = true;
+
+cleanup:
+    free(base_path);
+    free(javacpp_cache_root_path);
+    free(javacpp_cache_relative_path);
+    if (!success) {
+        free_appcontainer_java_directories(directories);
+    }
+    return success;
+}
+
 static bool grant_path_tree_access(PSID appcontainer_sid, const wchar_t *path, DWORD access_permissions) {
-    DWORD result = grant_path_access(appcontainer_sid, path, access_permissions);
+    DWORD result = grant_path_access(appcontainer_sid,
+                                     path,
+                                     access_permissions,
+                                     OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE);
     if (result != ERROR_SUCCESS) {
         SetLastError(result);
         return false;
@@ -360,7 +760,12 @@ static bool grant_path_tree_access(PSID appcontainer_sid, const wchar_t *path, D
     free(search_path);
     if (find_handle == INVALID_HANDLE_VALUE) {
         DWORD find_error = GetLastError();
-        return find_error == ERROR_FILE_NOT_FOUND || find_error == ERROR_PATH_NOT_FOUND;
+        if (find_error == ERROR_FILE_NOT_FOUND || find_error == ERROR_PATH_NOT_FOUND) {
+            return true;
+        }
+        print_path_error(L"Failed to enumerate AppContainer grant target directory", path, find_error);
+        SetLastError(find_error);
+        return false;
     }
 
     bool success = true;
@@ -395,6 +800,10 @@ static bool grant_path_tree_access(PSID appcontainer_sid, const wchar_t *path, D
 
 static bool grant_configured_roots(PSID appcontainer_sid, const struct launcher_options *options) {
     for (DWORD index = 0; index < options->read_root_count; index++) {
+        if (!grant_parent_directory_access(appcontainer_sid, options->read_roots[index])) {
+            print_last_error(L"Failed to grant AppContainer read parent directory access");
+            return false;
+        }
         if (!grant_path_tree_access(appcontainer_sid,
                                     options->read_roots[index],
                                     GENERIC_READ | GENERIC_EXECUTE)) {
@@ -404,6 +813,10 @@ static bool grant_configured_roots(PSID appcontainer_sid, const struct launcher_
     }
 
     for (DWORD index = 0; index < options->write_root_count; index++) {
+        if (!grant_parent_directory_access(appcontainer_sid, options->write_roots[index])) {
+            print_last_error(L"Failed to grant AppContainer write parent directory access");
+            return false;
+        }
         if (!grant_path_tree_access(appcontainer_sid,
                                     options->write_roots[index],
                                     GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | DELETE)) {
@@ -525,18 +938,40 @@ static bool append_quoted_argument(struct wide_buffer *buffer, const wchar_t *ar
     return wide_buffer_append_char(buffer, L'"');
 }
 
-static wchar_t *build_command_line(int argc, wchar_t *argv[], int command_index) {
+static bool append_command_line_argument(struct wide_buffer *buffer,
+                                         const wchar_t *argument,
+                                         bool *has_arguments) {
+    if (*has_arguments && !wide_buffer_append_char(buffer, L' ')) {
+        return false;
+    }
+    if (!append_quoted_argument(buffer, argument)) {
+        return false;
+    }
+    *has_arguments = true;
+    return true;
+}
+
+static wchar_t *build_command_line(int argc,
+                                   wchar_t *argv[],
+                                   int command_index,
+                                   const struct appcontainer_java_directories *java_directories) {
     struct wide_buffer buffer;
     ZeroMemory(&buffer, sizeof(buffer));
 
+    bool has_arguments = false;
     for (int index = command_index; index < argc; index++) {
-        if (index > command_index && !wide_buffer_append_char(&buffer, L' ')) {
+        if (!append_command_line_argument(&buffer, argv[index], &has_arguments)) {
             free(buffer.data);
             return NULL;
         }
-        if (!append_quoted_argument(&buffer, argv[index])) {
-            free(buffer.data);
-            return NULL;
+
+        if (index == command_index && java_directories != NULL) {
+            if (!append_command_line_argument(&buffer, java_directories->user_home_argument, &has_arguments) ||
+                    !append_command_line_argument(&buffer, java_directories->temp_argument, &has_arguments) ||
+                    !append_command_line_argument(&buffer, java_directories->javacpp_cache_argument, &has_arguments)) {
+                free(buffer.data);
+                return NULL;
+            }
         }
     }
     return buffer.data;
@@ -581,9 +1016,24 @@ static int launch_appcontainer_process(int argc,
                                        const struct launcher_options *options,
                                        PSID appcontainer_sid,
                                        SID_AND_ATTRIBUTES *capability_attributes) {
-    wchar_t *command_line = build_command_line(argc, argv, options->command_index);
+    struct appcontainer_java_directories java_directories;
+    struct appcontainer_java_directories *java_directories_ptr = NULL;
+    ZeroMemory(&java_directories, sizeof(java_directories));
+    if (options->appcontainer_storage_scope != NULL) {
+        if (!prepare_appcontainer_java_directories(appcontainer_sid,
+                                                  options->appcontainer_storage_scope,
+                                                  options->javacpp_cache_scope,
+                                                  &java_directories)) {
+            print_last_error(L"Failed to prepare AppContainer Java directories");
+            return 126;
+        }
+        java_directories_ptr = &java_directories;
+    }
+
+    wchar_t *command_line = build_command_line(argc, argv, options->command_index, java_directories_ptr);
     if (command_line == NULL) {
         print_last_error(L"Failed to construct child process command line");
+        free_appcontainer_java_directories(&java_directories);
         return 126;
     }
 
@@ -594,6 +1044,7 @@ static int launch_appcontainer_process(int argc,
                                                                                           attribute_list_size);
     if (attribute_list == NULL) {
         free(command_line);
+        free_appcontainer_java_directories(&java_directories);
         print_last_error(L"Failed to allocate process attribute list");
         return 126;
     }
@@ -644,7 +1095,7 @@ static int launch_appcontainer_process(int argc,
                         TRUE,
                         EXTENDED_STARTUPINFO_PRESENT,
                         NULL,
-                        NULL,
+                        java_directories_ptr == NULL ? NULL : java_directories.scope_path,
                         &startup_info.StartupInfo,
                         &process_information)) {
         print_last_error(L"Failed to launch webcam process in AppContainer");
@@ -679,6 +1130,7 @@ cleanup_attribute_list:
 cleanup:
     HeapFree(GetProcessHeap(), 0, attribute_list);
     free(command_line);
+    free_appcontainer_java_directories(&java_directories);
     return exit_code;
 }
 

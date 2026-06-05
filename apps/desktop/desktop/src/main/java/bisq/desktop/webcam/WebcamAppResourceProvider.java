@@ -33,36 +33,52 @@ import static bisq.desktop.webcam.WebcamAppResourceVerifier.fileMatchesPackagedZ
 
 @Slf4j
 class WebcamAppResourceProvider {
-    private final Path webcamDirPath;
+    private final Path webcamAppDirPath;
     private final WebcamSandboxPolicy sandboxPolicy;
+    private final boolean extractionAllowed;
 
-    WebcamAppResourceProvider(Path webcamDirPath) {
-        this(webcamDirPath, WebcamSandboxPolicy.create());
+    WebcamAppResourceProvider(Path webcamAppDirPath) {
+        this(webcamAppDirPath, WebcamSandboxPolicy.create(), true);
     }
 
-    WebcamAppResourceProvider(Path webcamDirPath, WebcamSandboxPolicy sandboxPolicy) {
-        this.webcamDirPath = webcamDirPath;
+    WebcamAppResourceProvider(Path webcamAppDirPath, WebcamSandboxPolicy sandboxPolicy) {
+        this(webcamAppDirPath, sandboxPolicy, true);
+    }
+
+    WebcamAppResourceProvider(Path webcamAppDirPath, WebcamSandboxPolicy sandboxPolicy, boolean extractionAllowed) {
+        this.webcamAppDirPath = webcamAppDirPath;
         this.sandboxPolicy = sandboxPolicy;
+        this.extractionAllowed = extractionAllowed;
     }
 
     Path prepareWebcamAppResources() throws IOException {
-        String version = FileReaderUtils.readStringFromResource("webcam-app/version.txt").trim();
-        return prepareWebcamAppResources(version);
+        return prepareWebcamAppResources(webcamAppVersion());
+    }
+
+    String webcamAppVersion() throws IOException {
+        return FileReaderUtils.readStringFromResource("webcam-app/version.txt").trim();
     }
 
     Path prepareWebcamAppResources(String version) throws IOException {
         String jarFileName = "webcam-app-" + version + "-all.jar";
-        Path jarFilePath = webcamDirPath.resolve(jarFileName);
+        Path jarFilePath = webcamAppDirPath.resolve(jarFileName);
         String resourcePath = "webcam-app/webcam-app-" + version + ".zip";
         Optional<WebcamSandboxPolicy.SandboxLauncherResource> sandboxLauncherResource = sandboxPolicy.sandboxLauncherResource();
+
+        if (!extractionAllowed) {
+            verifyPackagedAppResources(jarFilePath, sandboxLauncherResource);
+            return jarFilePath;
+        }
+
         Optional<Boolean> sandboxLauncherMatchesPackagedZip = Optional.empty();
         if (sandboxLauncherResource.isPresent()) {
             sandboxLauncherMatchesPackagedZip = sandboxLauncherMatchesPackagedZip(resourcePath, sandboxLauncherResource.get().fileName());
         }
         boolean packagedSandboxLauncherExists = sandboxLauncherMatchesPackagedZip.isPresent();
+        boolean jarMatchesPackagedZip = fileMatchesPackagedZip(jarFilePath, openWebcamZipResource(resourcePath), jarFileName);
 
         if (DevMode.isDevMode()
-                || !fileMatchesPackagedZip(jarFilePath, openWebcamZipResource(resourcePath), jarFileName)
+                || !jarMatchesPackagedZip
                 || sandboxLauncherNeedsExtraction(sandboxLauncherMatchesPackagedZip)) {
             extractWebcamZip(resourcePath);
             if (!fileMatchesPackagedZip(jarFilePath, openWebcamZipResource(resourcePath), jarFileName)) {
@@ -76,6 +92,23 @@ class WebcamAppResourceProvider {
         }
         prepareSandboxLauncher(sandboxLauncherResource, packagedSandboxLauncherExists);
         return jarFilePath;
+    }
+
+    private void verifyPackagedAppResources(Path jarFilePath,
+                                            Optional<WebcamSandboxPolicy.SandboxLauncherResource> sandboxLauncherResource) throws IOException {
+        if (!Files.isRegularFile(jarFilePath)) {
+            throw new IOException("Packaged webcam jar is missing: " + jarFilePath.toAbsolutePath());
+        }
+
+        if (sandboxLauncherResource.isEmpty()) {
+            return;
+        }
+
+        WebcamSandboxPolicy.SandboxLauncherResource resource = sandboxLauncherResource.get();
+        Path sandboxLauncherPath = sandboxLauncherPath(resource.fileName());
+        if (!Files.isRegularFile(sandboxLauncherPath)) {
+            throw new IOException("Packaged webcam sandbox launcher is missing: " + sandboxLauncherPath.toAbsolutePath());
+        }
     }
 
     private Optional<Boolean> sandboxLauncherMatchesPackagedZip(String resourcePath, String sandboxLauncherFileName) throws IOException {
@@ -115,12 +148,12 @@ class WebcamAppResourceProvider {
     }
 
     private Path sandboxLauncherPath(String sandboxLauncherFileName) {
-        return webcamDirPath.resolve(sandboxLauncherFileName);
+        return webcamAppDirPath.resolve(sandboxLauncherFileName);
     }
 
     private void extractWebcamZip(String resourcePath) throws IOException {
         try (InputStream inputStream = openWebcamZipResource(resourcePath);
-             ZipFileExtractor zipFileExtractor = new ZipFileExtractor(inputStream, webcamDirPath)) {
+             ZipFileExtractor zipFileExtractor = new ZipFileExtractor(inputStream, webcamAppDirPath)) {
             zipFileExtractor.extractArchive();
             log.info("Extracted webcam app resources");
         }

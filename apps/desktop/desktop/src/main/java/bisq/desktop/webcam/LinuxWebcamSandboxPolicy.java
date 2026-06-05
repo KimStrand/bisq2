@@ -56,7 +56,7 @@ final class LinuxWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy {
     @Override
     public void apply(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException {
         super.apply(processBuilder, context);
-        Path sandboxHomePath = context.webcamDirPath().resolve("home");
+        Path sandboxHomePath = context.webcamDataDirPath().resolve("home");
         Files.createDirectories(sandboxHomePath);
         processBuilder.environment().put("HOME", sandboxHomePath.toAbsolutePath().toString());
     }
@@ -74,7 +74,7 @@ final class LinuxWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy {
 
     private void addLandlockReadRootArguments(List<String> wrappedCommand, WebcamLaunchContext context) {
         LinkedHashSet<Path> readRoots = new LinkedHashSet<>();
-        readRoots.add(context.webcamDirPath());
+        readRoots.add(context.webcamAppDirPath());
         readRoots.add(Path.of(System.getProperty("java.home")));
 
         addExistingPath(readRoots, "/bin");
@@ -102,7 +102,7 @@ final class LinuxWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy {
 
     private void addLandlockWriteRootArguments(List<String> wrappedCommand, WebcamLaunchContext context) {
         LinkedHashSet<Path> writeRoots = new LinkedHashSet<>();
-        writeRoots.add(context.webcamDirPath());
+        writeRoots.add(context.webcamDataDirPath());
         addExistingPath(writeRoots, "/dev");
         addExistingPath(writeRoots, "/run");
         addExistingPath(writeRoots, "/tmp");
