@@ -213,6 +213,38 @@ val prepareWindowsWebcamAppContent by tasks.registering(org.gradle.api.tasks.Syn
     dependsOn(compileWindowsAppContainerLauncher)
     from(shadowJarTask.flatMap { it.archiveFile })
     from(windowsAppContainerLauncherOutput)
+
+    // Unpack the JavaCPP/OpenCV Windows native libraries as loose, co-located files so the sandboxed helper can
+    // System.load() them directly from this read-only dir (see WindowsWebcamSandboxPolicy.jvmArguments). They are
+    // otherwise only bundled inside the shadow jar, from where JavaCPP would extract them to a writable cache that the
+    // AppContainer cannot canonicalize. Flattened into the content root so java.library.path is a single dir and the
+    // Windows loader resolves dependent DLLs from the same directory.
+    from(provider {
+        configurations.getByName("runtimeClasspath").files
+                .filter { it.name.contains("windows-x86_64") && it.name.endsWith(".jar") }
+                .map { zipTree(it) }
+    }) {
+        include("**/*.dll")
+        includeEmptyDirs = false
+        eachFile { path = name }
+    }
+
+    // JavaCPP's openblas Windows artifact ships only libopenblas.dll, but the JNI binding
+    // jniopenblas_nolapack.dll (loaded transitively by opencv_core) imports a sibling named
+    // libopenblas_nolapack.dll. In JavaCPP's normal cache-extraction flow that file is materialized as a
+    // byte-identical copy of libopenblas.dll; since we bypass the cache (cacheLibraries=false) we recreate the copy
+    // here so the Windows loader can resolve the dependency. It is the only synthetic DLL the cache produces that is
+    // absent from the jars, and is SHA-256 identical to libopenblas.dll.
+    from(provider {
+        configurations.getByName("runtimeClasspath").files
+                .filter { it.name.startsWith("openblas-") && it.name.contains("windows-x86_64") && it.name.endsWith(".jar") }
+                .map { zipTree(it) }
+    }) {
+        include("**/libopenblas.dll")
+        includeEmptyDirs = false
+        eachFile { path = "libopenblas_nolapack.dll" }
+    }
+
     into(windowsWebcamAppContentDir)
 }
 

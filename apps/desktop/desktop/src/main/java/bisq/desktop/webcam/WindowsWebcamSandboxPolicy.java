@@ -17,11 +17,13 @@
 
 package bisq.desktop.webcam;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -101,7 +103,35 @@ final class WindowsWebcamSandboxPolicy extends NativeWebcamLauncherSandboxPolicy
 
     @Override
     protected List<String> jvmArguments(WebcamLaunchContext context) {
-        return List.of();
+        // Load the OpenCV/JavaCPP native libraries directly from the read-only packaged webcam dir instead of
+        // extracting them to a writable cache. JavaCPP's cache setup canonicalizes the cache path via
+        // Path.toRealPath() on Windows (Loader.getCacheDir -> getCanonicalFile), which fails with
+        // AccessDeniedException inside the AppContainer: canonicalization needs read/traverse access along the whole
+        // path chain up to the volume root, which the container is not granted. Disabling the cache
+        // (cacheLibraries=false) skips getCacheDir() entirely, and pathsFirst=true makes findLibrary search
+        // java.library.path first and return file: URLs that loadLibrary() System.load()s straight from disk.
+        String nativeLibraryPath = context.webcamAppDirPath().toAbsolutePath().normalize().toString();
+        return List.of(
+                "-Dorg.bytedeco.javacpp.cacheLibraries=false",
+                "-Dorg.bytedeco.javacpp.pathsFirst=true",
+                "-Djava.library.path=" + nativeLibraryPath);
+    }
+
+    @Override
+    public void apply(ProcessBuilder processBuilder, WebcamLaunchContext context) throws IOException {
+        super.apply(processBuilder, context);
+        // System.load() loads each OpenCV/JavaCPP DLL from the packaged dir by absolute path, but Windows resolves
+        // that DLL's own dependent imports (e.g. jniopenblas_nolapack.dll -> libopenblas_nolapack.dll) using the
+        // standard search order, which does not include the loaded module's own directory. Put the packaged webcam
+        // dir on PATH so those co-located dependents resolve. The dir is already AppContainer-read-granted, so this
+        // does not widen the sandbox.
+        String nativeLibraryPath = context.webcamAppDirPath().toAbsolutePath().normalize().toString();
+        Map<String, String> environment = processBuilder.environment();
+        String existingPath = environment.get("PATH");
+        String newPath = existingPath == null || existingPath.isBlank()
+                ? nativeLibraryPath
+                : nativeLibraryPath + File.pathSeparator + existingPath;
+        environment.put("PATH", newPath);
     }
 
     @Override
