@@ -37,11 +37,19 @@ public class FrameToBitmapConverter implements FrameConverter<BinaryBitmap> {
 
     @Override
     public BinaryBitmap convert(Frame frame) {
+        return new BinaryBitmap(new HybridBinarizer(toLuminanceSource(frame)));
+    }
+
+    /**
+     * Exposes the grayscale {@link LuminanceSource} so callers can derive multiple bitmaps from a single grayscale
+     * conversion - e.g. a normal and an {@link LuminanceSource#invert() inverted} bitmap - without re-running the
+     * (relatively expensive) frame-to-grayscale step.
+     */
+    public LuminanceSource toLuminanceSource(Frame frame) {
         Objects.requireNonNull(frame, "Frame must not be null");
 
         final Mat mat = frameToMatConverter.convert(frame);
-        final OpenCVMatToGrayscaleSource source = new OpenCVMatToGrayscaleSource(mat);
-        return new BinaryBitmap(new HybridBinarizer(source));
+        return new OpenCVMatToGrayscaleSource(mat);
     }
 
     /**

@@ -75,7 +75,9 @@ Follow-up work:
 
 ## Windows status
 
-Windows is blocked for the current Java/OpenCV helper design.
+Windows was blocked for the original Java/OpenCV helper design; it is now addressed by replacing the
+Windows capture backend with in-sandbox WinRT capture (see *Resolution* below). The OpenCV/MSMF
+findings that motivated the switch are kept here for context.
 
 The desired Windows design was:
 
@@ -131,20 +133,57 @@ Reasoning:
 
 Conclusion:
 
-- Windows AppContainer is not usable for the existing Java/OpenCV webcam helper.
+- Windows AppContainer is not usable for the OpenCV `videoio`/MSMF camera-open path.
 - Full-trust MSIX proves package identity and camera consent can work, but it is not sandboxed.
-- A backend switch does not rescue the current helper; forced `CAP_MSMF` was tested and still
+- A backend switch does not rescue the OpenCV path; forced `CAP_MSMF` was tested and still
   failed inside AppContainer.
+- The blocker is specifically the OpenCV/MSMF *camera-open* call, not AppContainer camera access in
+  general: `Windows.Media.Capture` is the API designed to open the camera from a packaged
+  AppContainer app and integrates with the `webcam` capability and the consent broker.
 
-Windows options from here:
+### Resolution: in-sandbox WinRT capture
 
-1. Prototype a minimal native C++/WinRT or C# `MediaCapture` MSIX AppContainer scanner/probe.
-2. If that works, replace the Windows helper with a native standalone scanner that returns only the
-   decoded QR payload.
-3. Alternatively, use a full-trust camera broker and pass frames to a sandboxed decoder. This keeps
-   QR parsing sandboxed but leaves the camera broker trusted.
-4. If neither path is acceptable, drop Windows sandboxing for webcam scanning and use a weaker or
-   manual/external scan flow.
+Rather than move capture out to a full-trust broker (which would relocate the native camera/parsing
+attack surface into a trusted process), the Windows helper keeps the **single sandboxed process**
+model used on Linux/macOS and only swaps the *capture backend*:
+
+- A small C++/WinRT JNI shim (`src/main/c/bisq_webcam_winrt.cpp`, built to `bisq_webcam_winrt.dll`)
+  opens the camera with `MediaCapture` + `MediaFrameReader` **in-process, inside the AppContainer**.
+- It delivers tightly packed 24-bit BGR frames directly into the JavaCV `Frame`'s native image
+  buffer, so the existing preview rendering and ZXing QR decoding are unchanged.
+- `WinRtFrameGrabber` (a JavaCV `FrameGrabber`) and `CameraDeviceLookupWindows` plug into the same
+  `WebcamService` pipeline; only the Windows branch of the `CameraDeviceLookup` switch differs.
+- OpenCV `videoio`/MSMF is no longer exercised on Windows. OpenCV `core`/`imgproc` (CPU-only colour
+  conversion for preview/decode) still load fine inside the AppContainer.
+- The DLL is co-located with the OpenCV/JavaCPP natives in the read-only packaged webcam directory
+  and resolved via `System.loadLibrary` from the same `java.library.path` the sandbox policy sets.
+  It uses the static CRT (`/MT`) and links only `windowsapp.lib`, so it adds no VC-runtime DLL
+  dependency for the AppContainer to resolve.
+
+Security note: capture, decode, and preview all remain inside the AppContainer with the `webcam`
+capability, no network capability, and no Bisq data-folder access — identical isolation goals to the
+other platforms, with no trusted broker introduced.
+
+> Status: VALIDATED on Windows 11. The probe harness
+> (`tools/webcam-windows-msix-appcontainer/Run-WebcamWindowsMsixAppContainerTest.ps1 -Probe winrt`)
+> ran `WinRtCaptureProbe` across four modes:
+>
+> | Mode | TokenIsAppContainer | WinRT capture |
+> |---|---|---|
+> | Direct desktop | false | frames flow |
+> | Full-trust MSIX package | false | frames flow |
+> | Synthetic AppContainer (custom launcher, no package identity) | true | `E_ACCESSDENIED` at `InitializeAsync` |
+> | **Real MSIX `packagedClassicApp` AppContainer** | **true** | **frames flow** |
+>
+> Conclusion: WinRT `MediaCapture` captures successfully inside an AppContainer **when the process has
+> real MSIX package identity** plus the `webcam` capability. The synthetic AppContainer launcher
+> (`bisq-webcam-appcontainer-launcher.exe`) is denied camera consent because it has no package
+> identity - the same identity gating that blocks OpenCV/MSMF. Compare: under the *same* real MSIX
+> identity, OpenCV/MSMF was still denied (table above), whereas WinRT succeeds.
+>
+> Delivery consequence: the Windows webcam helper must ship as a **real MSIX package** declaring the
+> `webcam` capability (not the synthetic-AppContainer launcher path). That packaging work is the
+> remaining Windows task; the capture code itself is done.
 
 ## macOS status
 
@@ -196,13 +235,12 @@ The branch is useful as an investigation branch. It captures:
 - The current helper-process model.
 - The desired least-privilege sandboxing model.
 - A working Linux direction.
-- A blocked Windows Java/OpenCV/AppContainer result.
+- A Windows direction: in-sandbox WinRT capture replacing the blocked OpenCV/MSMF path.
 - A plausible but unvalidated macOS App Sandbox direction.
 
 Recommended next step when resuming:
 
 1. Add Linux/macOS denial probes.
 2. Decide Linux fail-open versus fail-closed behavior when Landlock is unavailable.
-3. Prototype a native Windows `MediaCapture` MSIX AppContainer probe.
-4. Decide whether Windows should use a native scanner helper, a full-trust broker plus sandboxed
-   decoder, or no sandboxed webcam helper.
+3. Validate `MediaCapture`-in-AppContainer on real Windows hardware/CI, then run a real QR scan from
+   the WinRT-backed sandboxed helper plus network- and data-folder-denial probes.

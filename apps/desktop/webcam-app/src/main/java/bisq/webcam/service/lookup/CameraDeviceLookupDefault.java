@@ -33,7 +33,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Works for Mac (Intel and aarch64) and Windows.
+ * Works for Mac (Intel and aarch64). Windows uses {@link CameraDeviceLookupWindows} (WinRT) instead, because OpenCV's
+ * VideoCapture/MSMF cannot open the camera inside the AppContainer sandbox.
  * <p>
  * We use org.bytedeco.opencv.opencv_videoio.VideoCapture.grab calls to let it fail fast if permissions for camera
  * usage are not set. VideoCapture is also used to determine how many devices are available. Other means like using

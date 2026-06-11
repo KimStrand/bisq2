@@ -17,9 +17,12 @@
 
 package bisq.webcam.service.processor;
 
-import bisq.webcam.service.converter.FrameConverter;
+import bisq.webcam.service.converter.FrameToBitmapConverter;
 import com.google.zxing.BinaryBitmap;
 import com.google.zxing.DecodeHintType;
+import com.google.zxing.LuminanceSource;
+import com.google.zxing.NotFoundException;
+import com.google.zxing.common.HybridBinarizer;
 import com.google.zxing.qrcode.QRCodeReader;
 import org.bytedeco.javacv.Frame;
 
@@ -31,10 +34,16 @@ import java.util.Optional;
  */
 public class QrCodeProcessor implements FrameProcessor<String> {
     private static final Map<DecodeHintType, Object> HINTS = Map.of(DecodeHintType.TRY_HARDER, Boolean.TRUE);
+    // Decoding with TRY_HARDER is the expensive part, and most frames during scanning contain no QR code at all.
+    // Retrying every miss with an inverted source would roughly double that cost on the hot path, so the inverted
+    // (light-on-dark) attempt is throttled to one in every INVERTED_RETRY_INTERVAL misses. At typical frame rates an
+    // inverted QR is still picked up within a fraction of a second. Accessed only from the single capture thread.
+    private static final int INVERTED_RETRY_INTERVAL = 4;
 
-    private final FrameConverter<BinaryBitmap> frameToBitmapConverter;
+    private final FrameToBitmapConverter frameToBitmapConverter;
+    private long missCount;
 
-    public QrCodeProcessor(FrameConverter<BinaryBitmap> frameToBitmapConverter) {
+    public QrCodeProcessor(FrameToBitmapConverter frameToBitmapConverter) {
         this.frameToBitmapConverter = frameToBitmapConverter;
     }
 
@@ -52,9 +61,28 @@ public class QrCodeProcessor implements FrameProcessor<String> {
             return Optional.empty();
         }
 
+        final LuminanceSource source;
         try {
-            final BinaryBitmap bitmap = frameToBitmapConverter.convert(frame);
-            return Optional.of(new QRCodeReader().decode(bitmap, HINTS).getText());
+            source = frameToBitmapConverter.toLuminanceSource(frame);
+        } catch (Exception ignored) {
+            // Frame could not be converted to a grayscale source.
+            return Optional.empty();
+        }
+
+        final QRCodeReader reader = new QRCodeReader();
+        try {
+            return Optional.of(reader.decode(new BinaryBitmap(new HybridBinarizer(source)), HINTS).getText());
+        } catch (NotFoundException notFound) {
+            // No standard (dark-on-light) QR code found. Periodically retry with an inverted source to also support
+            // light-on-dark QR codes, reusing the same grayscale (only the binarization is repeated).
+            if (missCount++ % INVERTED_RETRY_INTERVAL != 0) {
+                return Optional.empty();
+            }
+            try {
+                return Optional.of(reader.decode(new BinaryBitmap(new HybridBinarizer(source.invert())), HINTS).getText());
+            } catch (Exception ignored) {
+                return Optional.empty();
+            }
         } catch (Exception ignored) {
             // There is no QR code in the image
             return Optional.empty();

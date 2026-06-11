@@ -1,3 +1,39 @@
+<#
+.SYNOPSIS
+    Validates Windows webcam capture inside a real MSIX AppContainer (real package identity + webcam capability).
+
+.DESCRIPTION
+    Builds a real MSIX packagedClassicApp around the webcam helper and runs a probe across four modes (direct,
+    full-trust package, package-SID AppContainer, real MSIX AppContainer), printing an exit-code matrix.
+
+    Use -Probe to choose what runs inside the sandbox:
+      opencv        the original CamProbe (OpenCV VideoCapture/MSMF) - denied inside the AppContainer.
+      winrt         WinRtCaptureProbe - WinRT capture only (frames flowing).
+      winrt-decode  QrDecodeProbe (--backend winrt) - capture + ZXing decode; prints the decoded QR payload.
+
+    HOW TO TEST THE WINRT CAPTURE PATH:
+      1. Prereqs: Windows 10 1809+/11, JDK 21 (JAVA_HOME set), Visual Studio Build Tools 2022 with the Desktop C++
+         workload + Windows SDK, and Developer Mode ON (Settings > Privacy & security > For developers) so the MSIX
+         package can be registered.
+      2. Open "Developer PowerShell for VS 2022" AS ADMINISTRATOR. The VS environment puts cl.exe on PATH so both the
+         webcam DLL (Gradle) and the probe-runner compile; admin is required to register the MSIX package.
+      3. Ensure a camera is available: attach a webcam, or run OBS Studio > Start Virtual Camera pointed at a sharp,
+         well-lit QR code (needed only for winrt-decode to actually decode something).
+      4. From the repo root, run one of:
+           tools\webcam-windows-msix-appcontainer\Run-WebcamWindowsMsixAppContainerTest.ps1 -Probe winrt
+           tools\webcam-windows-msix-appcontainer\Run-WebcamWindowsMsixAppContainerTest.ps1 -Probe winrt-decode -TimeoutSeconds 90
+         (The script runs gradlew prepareWindowsWebcamAppContent itself; pass -SkipBuild to reuse an existing build.)
+      5. Read the result matrix. The decisive row is real-msix-appcontainer:
+           ExitCode 0                 -> WinRT capture works inside the real MSIX AppContainer (design validated).
+           winrt-decode, payload line -> the full capture+decode pipeline works in the sandbox.
+           ExitCode != 0              -> inspect build\webcam-windows-msix-appcontainer-test\results\
+                                         real-msix-appcontainer\probe-output.txt for the winrt_open_fail hr= line.
+      Note: camera consent requires real MSIX package identity, so the synthetic-AppContainer launcher used in
+      production cannot obtain consent - shipping the helper as a real MSIX package is the validated delivery path.
+
+.EXAMPLE
+    Run-WebcamWindowsMsixAppContainerTest.ps1 -Probe winrt-decode -TimeoutSeconds 90
+#>
 [CmdletBinding()]
 param(
     [switch]$SkipBuild,
@@ -7,6 +43,14 @@ param(
     [string]$RuntimeJavaHome,
     [ValidateSet("msmf", "any", "dshow")]
     [string]$Backend = "msmf",
+    # opencv: the original CamProbe (VideoCapture/MSMF).
+    # winrt: bisq.webcam.service.capture.WinRtCaptureProbe - WinRT capture only (frames flowing).
+    # winrt-decode: bisq.webcam.service.capture.QrDecodeProbe --backend winrt - the full pipeline (capture + ZXing
+    #   decode) run inside the sandbox, printing decoded_count and the decoded QR payload (first_payload).
+    # Use winrt/winrt-decode to validate the design under real MSIX package identity - the case the
+    # synthetic-AppContainer launcher cannot exercise because camera consent needs package identity.
+    [ValidateSet("opencv", "winrt", "winrt-decode")]
+    [string]$Probe = "opencv",
     [int]$Device = 0,
     [int]$Frames = 10,
     [int]$DelayMillis = 100,
@@ -581,23 +625,58 @@ function Write-ProbeConfig {
 
     $javaExecutable = Join-Path $JavaHomePath "bin\java.exe"
     $classpath = $ShadowJarPath + [System.IO.Path]::PathSeparator + $ClassesDir
-    $commandArguments = @(
-        $javaExecutable,
-        "-Dorg.bytedeco.javacpp.cacheLibraries=false",
-        "-Dorg.bytedeco.javacpp.pathsFirst=true",
-        "-Djava.library.path=$ContentDir",
-        "-cp",
-        $classpath,
-        "CamProbe",
-        "--device",
-        "$Device",
-        "--backend",
-        $Backend,
-        "--frames",
-        "$Frames",
-        "--delay-ms",
-        "$DelayMillis"
-    )
+    # JavaCPP props are needed for both probes: even the WinRT probe constructs a JavaCV Frame, which loads jnijavacpp
+    # from the read-only content dir (cache extraction is blocked in the AppContainer).
+    if ($Probe -eq "winrt-decode") {
+        # Full capture + ZXing decode pipeline inside the sandbox; prints decoded_count and first_payload.
+        $commandArguments = @(
+            $javaExecutable,
+            "-Dorg.bytedeco.javacpp.cacheLibraries=false",
+            "-Dorg.bytedeco.javacpp.pathsFirst=true",
+            "-Djava.library.path=$ContentDir",
+            "-cp",
+            $classpath,
+            "bisq.webcam.service.capture.QrDecodeProbe",
+            "--backend",
+            "winrt",
+            "--device",
+            "$Device",
+            "--frames",
+            "$Frames"
+        )
+    } elseif ($Probe -eq "winrt") {
+        $commandArguments = @(
+            $javaExecutable,
+            "-Dorg.bytedeco.javacpp.cacheLibraries=false",
+            "-Dorg.bytedeco.javacpp.pathsFirst=true",
+            "-Djava.library.path=$ContentDir",
+            "-cp",
+            $classpath,
+            "bisq.webcam.service.capture.WinRtCaptureProbe",
+            "--device",
+            "$Device",
+            "--frames",
+            "$Frames"
+        )
+    } else {
+        $commandArguments = @(
+            $javaExecutable,
+            "-Dorg.bytedeco.javacpp.cacheLibraries=false",
+            "-Dorg.bytedeco.javacpp.pathsFirst=true",
+            "-Djava.library.path=$ContentDir",
+            "-cp",
+            $classpath,
+            "CamProbe",
+            "--device",
+            "$Device",
+            "--backend",
+            $Backend,
+            "--frames",
+            "$Frames",
+            "--delay-ms",
+            "$DelayMillis"
+        )
+    }
 
     Write-Utf8NoBom (Join-Path $ExternalRoot "probe-command.txt") (Join-WindowsCommandLine $commandArguments)
     Write-Utf8NoBom (Join-Path $ExternalRoot "probe-path-prefix.txt") $ContentDir
@@ -894,10 +973,30 @@ try {
     $appContainerResult = $results | Where-Object { $_.Mode -eq "package-sid-appcontainer" } | Select-Object -First 1
     $realAppContainerResult = $results | Where-Object { $_.Mode -eq "real-msix-appcontainer" } | Select-Object -First 1
 
+    Write-Host "Probe backend: $Probe"
     if ($fullTrustResult.ExitCode -ne 0) {
         Write-Warning "The full-trust packaged baseline did not capture frames. Treat the AppContainer results as inconclusive until package camera consent is working."
     } elseif ($realAppContainerResult.ExitCode -eq 0) {
-        Write-Host "Real MSIX AppContainer captured frames. This is the remaining viable Windows sandbox path to investigate."
+        if ($Probe -eq "winrt-decode") {
+            $decodeValues = Read-KeyValueFile $realAppContainerResult.Output
+            $decodedCount = $decodeValues["decoded_count"]
+            $payload = $decodeValues["first_payload"]
+            Write-Host "PASS: WinRT capture + ZXing decode ran inside the REAL MSIX AppContainer (package identity + webcam capability)." -ForegroundColor Green
+            Write-Host "decoded_count=$decodedCount"
+            if (-not [string]::IsNullOrEmpty($payload)) {
+                Write-Host "Decoded QR payload (inside the sandbox): $payload" -ForegroundColor Green
+                Write-Host "Full pipeline validated end-to-end in the sandbox."
+            } else {
+                Write-Host "Capture+decode ran in the sandbox but no QR was decoded - present a sharp, well-lit QR and re-run." -ForegroundColor Yellow
+            }
+        } elseif ($Probe -eq "winrt") {
+            Write-Host "PASS: WinRT captured frames inside the REAL MSIX AppContainer (package identity + webcam capability)." -ForegroundColor Green
+            Write-Host "The in-sandbox Windows design is validated: package the helper as MSIX with the webcam capability."
+        } else {
+            Write-Host "Real MSIX AppContainer captured frames. This is the remaining viable Windows sandbox path to investigate."
+        }
+    } elseif ($realAppContainerResult.ExitCode -ne 0 -and ($Probe -eq "winrt" -or $Probe -eq "winrt-decode")) {
+        Write-Warning "WinRT did NOT run inside the real MSIX AppContainer. Inspect $resultsDir\real-msix-appcontainer\probe-output.txt for the winrt_open_fail hr= line before concluding a broker is required."
     } elseif ($appContainerResult.ExitCode -eq 0) {
         Write-Warning "Package-family AppContainer captured frames. This contradicts the current findings and should be revalidated with the saved token/output files."
     } else {
