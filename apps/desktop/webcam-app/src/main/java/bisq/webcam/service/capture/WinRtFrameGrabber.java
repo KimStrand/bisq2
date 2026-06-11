@@ -75,7 +75,8 @@ public class WinRtFrameGrabber extends FrameGrabber {
             bgrMat = new Mat(imageHeight, imageWidth, CV_8UC3);
             matBuffer = bgrMat.createBuffer();
             matConverter = new OpenCVFrameConverter.ToMat();
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | LinkageError e) {
+            // LinkageError covers UnsatisfiedLinkError when the native shim DLL is missing/unloadable.
             release();
             throw new Exception("Starting WinRT frame grabber for device index " + deviceIndex + " failed", e);
         }
