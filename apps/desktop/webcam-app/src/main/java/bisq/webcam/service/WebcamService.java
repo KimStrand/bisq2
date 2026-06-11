@@ -26,6 +26,7 @@ import bisq.webcam.service.converter.FrameToImageConverter;
 import bisq.webcam.service.lookup.CameraDeviceLookup;
 import bisq.webcam.service.lookup.CameraDeviceLookupDefault;
 import bisq.webcam.service.lookup.CameraDeviceLookupLinux;
+import bisq.webcam.service.lookup.CameraDeviceLookupWindows;
 import bisq.webcam.service.processor.QrCodeProcessor;
 import javafx.scene.image.Image;
 import lombok.Getter;
@@ -65,8 +66,12 @@ public class WebcamService implements Service {
         qrCodeProcessor = new QrCodeProcessor(new FrameToBitmapConverter());
         OS os = OS.getOS();
         switch (os) {
-            case MAC_OS:
             case WINDOWS:
+                // OpenCV's VideoCapture/MSMF cannot open the camera inside the Windows AppContainer sandbox, so on
+                // Windows we capture through the WinRT shim instead. Decode and preview stay unchanged.
+                cameraDeviceLookup = new CameraDeviceLookupWindows();
+                break;
+            case MAC_OS:
                 cameraDeviceLookup = new CameraDeviceLookupDefault();
                 break;
             case LINUX:

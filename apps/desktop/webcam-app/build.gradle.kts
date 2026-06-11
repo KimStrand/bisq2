@@ -29,6 +29,10 @@ val windowsAppContainerLauncherSource = layout.projectDirectory.file("src/main/c
 val windowsAppContainerLauncherOutput = layout.buildDirectory.file("native/windows/$windowsAppContainerLauncherFileName")
 val windowsWebcamAppContentDir = layout.buildDirectory.dir("packaging/windows-app-content/webcam")
 
+val windowsWinRtCaptureFileName = "bisq_webcam_winrt.dll"
+val windowsWinRtCaptureSource = layout.projectDirectory.file("src/main/c/bisq_webcam_winrt.cpp")
+val windowsWinRtCaptureOutput = layout.buildDirectory.file("native/windows/$windowsWinRtCaptureFileName")
+
 val macOsBuildHost = System.getProperty("os.name").lowercase().contains("mac") ||
         System.getProperty("os.name").lowercase().contains("darwin")
 val macOsWebcamHelperAppName = "BisqWebcam"
@@ -96,6 +100,48 @@ val compileWindowsAppContainerLauncher by tasks.registering(org.gradle.api.tasks
             "advapi32.lib",
             "ole32.lib"
     )
+}
+
+// JDK home used only for its JNI headers (jni.h, jni_md.h). Pinned to the same toolchain version that packages the
+// helper, so the JNI ABI matches the bundled runtime.
+val jniHeaderJdkHome = javaToolchains.launcherFor {
+    languageVersion.set(JavaLanguageVersion.of(21))
+}.map { it.metadata.installationPath }
+
+// Compiles the WinRT camera capture JNI shim used by the sandboxed Windows webcam helper. WinRT (windowsapp.lib) is
+// header-only C++/WinRT; the only link dependency is windowsapp.lib, and the static CRT (/MT) avoids a VC runtime DLL
+// dependency that the AppContainer would otherwise have to resolve.
+val compileWindowsWinRtCapture by tasks.registering(org.gradle.api.tasks.Exec::class) {
+    onlyIf { windowsBuildHost }
+    inputs.file(windowsWinRtCaptureSource)
+    outputs.file(windowsWinRtCaptureOutput)
+
+    val outputFile = windowsWinRtCaptureOutput.get().asFile
+    workingDir(outputFile.parentFile)
+
+    doFirst {
+        outputFile.parentFile.mkdirs()
+        val jdkHome = jniHeaderJdkHome.get().asFile
+        commandLine(
+                "cl.exe",
+                "/nologo",
+                "/LD",
+                "/EHsc",
+                "/MT",
+                "/O2",
+                "/W3",
+                "/std:c++17",
+                "/DUNICODE",
+                "/D_UNICODE",
+                "/D_WIN32_WINNT=0x0A00",
+                "/I", jdkHome.resolve("include").absolutePath,
+                "/I", jdkHome.resolve("include").resolve("win32").absolutePath,
+                "/Fe:${outputFile.absolutePath}",
+                windowsWinRtCaptureSource.asFile.absolutePath,
+                "/link",
+                "windowsapp.lib"
+        )
+    }
 }
 
 fun createMacOsWebcamHelperIcon(iconSourceFile: File, iconSetDir: File, iconOutputFile: File) {
@@ -211,8 +257,12 @@ val prepareWindowsWebcamAppContent by tasks.registering(org.gradle.api.tasks.Syn
     val shadowJarTask = tasks.named<ShadowJar>("shadowJar")
     dependsOn(shadowJarTask)
     dependsOn(compileWindowsAppContainerLauncher)
+    dependsOn(compileWindowsWinRtCapture)
     from(shadowJarTask.flatMap { it.archiveFile })
     from(windowsAppContainerLauncherOutput)
+    // Co-locate the WinRT capture JNI shim with the OpenCV/JavaCPP natives so System.loadLibrary() resolves it from
+    // the same read-only java.library.path dir inside the AppContainer.
+    from(windowsWinRtCaptureOutput)
 
     // Unpack the JavaCPP/OpenCV Windows native libraries as loose, co-located files so the sandboxed helper can
     // System.load() them directly from this read-only dir (see WindowsWebcamSandboxPolicy.jvmArguments). They are
