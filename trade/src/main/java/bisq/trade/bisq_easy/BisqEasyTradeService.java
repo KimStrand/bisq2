@@ -137,10 +137,7 @@ public class BisqEasyTradeService extends RateLimitedPersistenceClient<BisqEasyT
 
         persistableStore.getTrades().forEach(this::createAndAddTradeProtocol);
 
-        networkService.getConfidentialMessageServices().stream()
-                .flatMap(service -> service.getProcessedEnvelopePayloadMessages().stream())
-                .forEach(this::onMessage);
-        networkService.addConfidentialMessageListener(this);
+        networkService.addConfidentialMessageListenerAndReplay(this);
 
         authorizedAlertDataSetPin = alertService.getAuthorizedAlertDataSet().addObserver(new CollectionObserver<>() {
             @Override

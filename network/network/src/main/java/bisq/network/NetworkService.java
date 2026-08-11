@@ -427,6 +427,15 @@ public class NetworkService extends RateLimitedPersistenceClient<NetworkServiceS
         serviceNodesByTransport.addConfidentialMessageListener(listener);
     }
 
+    /**
+     * Registers the listener before replaying messages which were processed earlier. Registration and snapshotting
+     * are atomic within each confidential message service, so a concurrent message cannot fall between both paths.
+     */
+    public void addConfidentialMessageListenerAndReplay(ConfidentialMessageService.Listener listener) {
+        serviceNodesByTransport.addConfidentialMessageListenerAndGetProcessedMessages(listener)
+                .forEach(listener::onMessage);
+    }
+
     public void removeConfidentialMessageListener(ConfidentialMessageService.Listener listener) {
         serviceNodesByTransport.removeConfidentialMessageListener(listener);
     }

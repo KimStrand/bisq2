@@ -351,6 +351,14 @@ public class ServiceNode implements Node.Listener {
         confidentialMessageService.ifPresent(service -> service.addListener(listener));
     }
 
+    Set<EnvelopePayloadMessage> addConfidentialMessageListenerAndGetProcessedMessages(
+            ConfidentialMessageService.Listener listener) {
+        confidentialMessageListeners.add(listener);
+        return confidentialMessageService
+                .map(service -> service.addListenerAndGetProcessedMessages(listener))
+                .orElse(Set.of());
+    }
+
     void removeConfidentialMessageListener(ConfidentialMessageService.Listener listener) {
         confidentialMessageListeners.remove(listener);
         confidentialMessageService.ifPresent(service -> service.removeListener(listener));

@@ -229,6 +229,13 @@ public class ServiceNodesByTransport {
         map.values().forEach(serviceNode -> serviceNode.addConfidentialMessageListener(listener));
     }
 
+    public Set<EnvelopePayloadMessage> addConfidentialMessageListenerAndGetProcessedMessages(
+            ConfidentialMessageService.Listener listener) {
+        return map.values().stream()
+                .flatMap(serviceNode -> serviceNode.addConfidentialMessageListenerAndGetProcessedMessages(listener).stream())
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
     public void removeConfidentialMessageListener(ConfidentialMessageService.Listener listener) {
         map.values().forEach(serviceNode -> serviceNode.removeConfidentialMessageListener(listener));
     }

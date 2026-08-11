@@ -43,7 +43,6 @@ import bisq.security.HybridEncryption;
 import bisq.security.keys.KeyBundleService;
 import bisq.security.keys.KeyGeneration;
 import bisq.security.keys.PubKey;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.security.GeneralSecurityException;
@@ -53,7 +52,6 @@ import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -76,9 +74,7 @@ public class ConfidentialMessageService implements Node.Listener, DataService.Li
     private final KeyBundleService keyBundleService;
     private final Optional<DataService> dataService;
     private final Optional<MessageDeliveryStatusService> messageDeliveryStatusService;
-    private final Set<Listener> listeners = new CopyOnWriteArraySet<>();
-    @Getter
-    private final Set<EnvelopePayloadMessage> processedEnvelopePayloadMessages = new CopyOnWriteArraySet<>();
+    private final ConfidentialMessageListenerRegistry listenerRegistry = new ConfidentialMessageListenerRegistry();
     private volatile boolean isShutdownInProgress;
 
     public ConfidentialMessageService(NodesById nodesById,
@@ -104,8 +100,7 @@ public class ConfidentialMessageService implements Node.Listener, DataService.Li
         isShutdownInProgress = true;
         nodesById.removeNodeListener(this);
         dataService.ifPresent(service -> service.removeListener(this));
-        listeners.clear();
-        processedEnvelopePayloadMessages.clear();
+        listenerRegistry.clear();
     }
 
 
@@ -374,13 +369,25 @@ public class ConfidentialMessageService implements Node.Listener, DataService.Li
     }
 
     public void addListener(Listener listener) {
-        listeners.add(listener);
+        listenerRegistry.addListener(listener);
+    }
+
+    /**
+     * Registers the listener and returns a snapshot of messages processed before registration as one atomic
+     * operation. A concurrently processed message is therefore either in the returned snapshot or delivered to
+     * the listener.
+     */
+    public Set<EnvelopePayloadMessage> addListenerAndGetProcessedMessages(Listener listener) {
+        return listenerRegistry.addListenerAndGetProcessedMessages(listener);
     }
 
     public void removeListener(Listener listener) {
-        listeners.remove(listener);
+        listenerRegistry.removeListener(listener);
     }
 
+    public Set<EnvelopePayloadMessage> getProcessedEnvelopePayloadMessages() {
+        return listenerRegistry.getProcessedMessages();
+    }
 
     /* --------------------------------------------------------------------- */
     // Private
@@ -507,11 +514,11 @@ public class ConfidentialMessageService implements Node.Listener, DataService.Li
                 verifyReceiverPublicKeyBinding(pubKeyProvidingMessage, receiversKeyPair.getPublic());
             }
 
-            boolean wasNotPresent = processedEnvelopePayloadMessages.add(decryptedEnvelopePayloadMessage);
-            if (wasNotPresent) {
+            Optional<Set<Listener>> listenersToNotify = listenerRegistry.addMessage(decryptedEnvelopePayloadMessage);
+            if (listenersToNotify.isPresent()) {
                 PublicKey senderPublicKey = KeyGeneration.generatePublic(encodedSenderPublicKey);
                 log.info("Decrypted confidentialMessage. decryptedEnvelopePayloadMessage={}", decryptedEnvelopePayloadMessage.getClass().getSimpleName());
-                listeners.forEach(listener -> {
+                listenersToNotify.get().forEach(listener -> {
                     NetworkExecutors.getNotifyExecutor().submit(() -> listener.onMessage(decryptedEnvelopePayloadMessage));
                     NetworkExecutors.getNotifyExecutor().submit(() -> listener.onConfidentialMessage(decryptedEnvelopePayloadMessage, senderPublicKey));
                 });
