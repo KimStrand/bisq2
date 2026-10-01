@@ -36,7 +36,6 @@ import bisq.network.p2p.node.authorization.AuthorizationToken;
 import bisq.network.p2p.node.envelope.NetworkEnvelopeSocket;
 import bisq.network.p2p.node.network_load.ConnectionMetrics;
 import bisq.network.p2p.node.network_load.NetworkLoadSnapshot;
-import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
@@ -155,9 +154,9 @@ public abstract class Connection {
         }
         try {
             inputHandlerFuture = readExecutor.submit(() -> {
-                long readTs = 0;
-                while (isInputStreamActive()) {
-                    try {
+                try {
+                    long readTs = 0;
+                    while (isInputStreamActive()) {
                         if (readTs != 0) {
                             log.debug("Processing message took {} ms. Wait for new message from {}. ", System.currentTimeMillis() - readTs, getPeerAddress());
                         } else {
@@ -202,30 +201,21 @@ public abstract class Connection {
                                 listeners.forEach(listener -> NetworkExecutors.getNotifyExecutor().submit(() -> listener.onNetworkMessage(envelopePayloadMessage)));
                             }
                         }
-                    } catch (InvalidProtocolBufferException exception) {
-                        // Malformed protobuf payload
-                        log.warn("Dropping malformed protobuf message: {}", exception.getMessage());
-                    } catch (IOException exception) {
-                        log.warn("Dropping malformed message or transient network error: {}", exception.getMessage());
-                    } catch (IllegalArgumentException exception) {
-                        // Size = 0 or exceeds MAX_ALLOWED_SIZE
-                        log.warn("Dropping invalid message: {}", exception.getMessage());
-                    } catch (Exception exception) {
-                        //todo (deferred) StreamCorruptedException from i2p at shutdown. prob it send some text data at shut down
-                        if (!shutdownStarted) {
-                            log.debug("Exception at input handler on {}", this, exception);
-                            shutdown(CloseReason.EXCEPTION.exception(exception));
+                    }
+                } catch (Exception exception) {
+                    //todo (deferred) StreamCorruptedException from i2p at shutdown. prob it send some text data at shut down
+                    if (!shutdownStarted) {
+                        log.debug("Exception at input handler on {}", this, exception);
+                        shutdown(CloseReason.EXCEPTION.exception(exception));
 
-                            // EOFException expected if connection got closed (Socket closed message)
-                            if (!(exception instanceof EOFException)) {
-                                errorHandler.accept(this, exception);
-                            }
+                        // EOFException expected if connection got closed (Socket closed message)
+                        if (!(exception instanceof EOFException)) {
+                            errorHandler.accept(this, exception);
                         }
                     }
                 }
             });
-        } catch (
-                RejectedExecutionException e) {
+        } catch (RejectedExecutionException e) {
             log.error("Read executor rejected task. We shut down the connection.", e);
             errorHandler.accept(this, e);
             inputHandlerFuture = CompletableFuture.failedFuture(e);
