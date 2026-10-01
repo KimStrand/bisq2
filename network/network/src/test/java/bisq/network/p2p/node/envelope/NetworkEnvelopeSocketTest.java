@@ -1,17 +1,36 @@
+/*
+ * This file is part of Bisq.
+ *
+ * Bisq is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * Bisq is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
+ * License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Bisq. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package bisq.network.p2p.node.envelope;
 
 import bisq.common.network.DefaultPeerSocket;
 import bisq.common.network.PeerSocket;
+import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -32,18 +51,38 @@ class NetworkEnvelopeSocketTest {
 
     @Test
     void receiveNextEnvelope_throws_onVarintTooLong() throws Exception {
-        // six continuation bytes -> varint > 5 bytes -> should trigger InvalidProtocolBufferException wrapped in IOException
-        byte[] malformedVarint = new byte[] {
-                (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80
+        byte[] payload = new byte[]{0x08, 0x01, 0x12, 0x02, 0x68, 0x69};
+        byte[] malformedVarint = new byte[]{
+                (byte) 0x86, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, 0x00
         };
 
-        try (Socket client = startServerThatWritesAndCloses(malformedVarint)) {
+        try (Socket client = startServerThatWritesAndCloses(concat(malformedVarint, payload))) {
             PeerSocket peerSocket = new DefaultPeerSocket(client);
             try (NetworkEnvelopeSocket socket = new NetworkEnvelopeSocket(peerSocket)) {
                 IOException ex = assertThrows(IOException.class, socket::receiveNextEnvelope);
                 assertTrue(ex.getMessage().contains("Malformed varint size prefix"),
                         "exception message should indicate malformed varint");
-                assertInstanceOf(InvalidProtocolBufferException.class, ex.getCause(), "cause should be InvalidProtocolBufferException");
+            }
+        }
+    }
+
+    @Test
+    void receiveNextEnvelope_throws_onTruncatedVarint() throws Exception {
+        try (Socket client = startServerThatWritesAndCloses(new byte[]{(byte) 0x80})) {
+            try (NetworkEnvelopeSocket socket = new NetworkEnvelopeSocket(new DefaultPeerSocket(client))) {
+                assertThrows(EOFException.class, socket::receiveNextEnvelope);
+            }
+        }
+    }
+
+    @Test
+    void receiveNextEnvelope_throws_onOverflowingVarint() throws Exception {
+        byte[] payload = new byte[]{0x08, 0x01, 0x12, 0x02, 0x68, 0x69};
+        // Encodes 2^32 + 6, which must not wrap around to an allowed size of 6.
+        byte[] length = new byte[]{(byte) 0x86, (byte) 0x80, (byte) 0x80, (byte) 0x80, 0x10};
+        try (Socket client = startServerThatWritesAndCloses(concat(length, payload))) {
+            try (NetworkEnvelopeSocket socket = new NetworkEnvelopeSocket(new DefaultPeerSocket(client))) {
+                assertThrows(IllegalArgumentException.class, socket::receiveNextEnvelope);
             }
         }
     }
@@ -100,25 +139,35 @@ class NetworkEnvelopeSocketTest {
     }
 
     @Test
-    void oversizedLength_then_validMessage_streamRecovers() throws Exception {
+    void receiveNextEnvelope_acceptsMaximumSize() throws Exception {
+        int size = 2_250_000;
+        ByteArrayOutputStream payloadOutput = new ByteArrayOutputStream();
+        CodedOutputStream codedOutput = CodedOutputStream.newInstance(payloadOutput);
+        // An unknown bytes field uses one byte for its tag and four for its length.
+        codedOutput.writeByteArray(4, new byte[size - 5]);
+        codedOutput.flush();
+        byte[] payload = payloadOutput.toByteArray();
+        assertEquals(size, payload.length);
+
+        try (Socket client = startServerThatWritesAndCloses(concat(varint32(size), payload))) {
+            try (NetworkEnvelopeSocket socket = new NetworkEnvelopeSocket(new DefaultPeerSocket(client))) {
+                assertArrayEquals(payload, socket.receiveNextEnvelope().toByteArray());
+            }
+        }
+    }
+
+    @Test
+    void receiveNextEnvelope_preservesConsecutiveMessageBoundaries() throws Exception {
         byte[] payload = new byte[]{0x08, 0x01, 0x12, 0x02, 0x68, 0x69};
         byte[] validMessage = concat(varint32(payload.length), payload);
-        // first write an oversized length prefix, then a valid small message
-        byte[] serverData = concat(varint32(10_000_000), validMessage);
+        byte[] serverData = concat(validMessage, validMessage);
 
         try (Socket client = startServerThatWritesAndCloses(serverData)) {
             PeerSocket peerSocket = new DefaultPeerSocket(client);
             try (NetworkEnvelopeSocket socket = new NetworkEnvelopeSocket(peerSocket)) {
-                // first call should fail due to size > MAX_ALLOWED_SIZE
-                assertThrows(IllegalArgumentException.class, socket::receiveNextEnvelope,
-                        "First envelope with oversized length should cause an IllegalArgumentException");
-
-                // second call should successfully read the following valid message
-                var proto = socket.receiveNextEnvelope();
-                assertNotNull(proto,
-                        "After the oversized length prefix is consumed, the next valid envelope should be read successfully");
-                assertArrayEquals(payload, proto.toByteArray(), "payload bytes should match the sent bytes");
-
+                assertArrayEquals(payload, socket.receiveNextEnvelope().toByteArray());
+                assertArrayEquals(payload, socket.receiveNextEnvelope().toByteArray());
+                assertNull(socket.receiveNextEnvelope());
             }
         }
     }

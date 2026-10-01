@@ -25,6 +25,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.Closeable;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -33,8 +34,8 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 @Slf4j
 public class NetworkEnvelopeSocket implements Closeable {
-    private final static int MAX_ALLOWED_SIZE = 2_250_000;
-    private final static int MAX_RECURSION_LIMIT = 20;
+    private static final int MAX_ALLOWED_SIZE = 2_250_000;
+    private static final int MAX_RECURSION_LIMIT = 20;
     private final PeerSocket socket;
     private final InputStream inputStream;
     private final OutputStream outputStream;
@@ -51,15 +52,11 @@ public class NetworkEnvelopeSocket implements Closeable {
     }
 
     /**
-     * Reads the next NetworkEnvelope from the stream with comprehensive protection:
-     * - Validates varint size prefix (max 5 bytes)
-     * - Enforces message size limit
-     * - Limits stream to exact declared bytes
-     * - Protects against malformed protobufs
-     * - Prevents recursion attacks
+     * Reads a size-delimited envelope with bounded message size and recursion.
+     * Callers must close the connection after a read failure because the next frame boundary may be unknown.
      *
      * @return NetworkEnvelope or null if EOF
-     * @throws IOException framing errors (malformed varint)
+     * @throws IOException framing or transport errors
      * @throws IllegalArgumentException invalid size
      * @throws InvalidProtocolBufferException malformed protobuf payload
      */
@@ -69,13 +66,18 @@ public class NetworkEnvelopeSocket implements Closeable {
             return null; // EOF
         }
 
-        // Read and validate the varint size prefix
-        int size;
-        try {
-            // This will throw InvalidProtocolBufferException if varint > 5 bytes
-            size = CodedInputStream.readRawVarint32(firstByte, inputStream);
-        } catch (InvalidProtocolBufferException e) {
-            throw new IOException("Malformed varint size prefix (possibly > 5 bytes): " + e.getMessage(), e);
+        // Decode at most five bytes into a long so an oversized value cannot wrap into an allowed size.
+        long size = firstByte & 0x7F;
+        int nextByte = firstByte;
+        for (int byteCount = 1; (nextByte & 0x80) != 0; byteCount++) {
+            if (byteCount == 5) {
+                throw new IOException("Malformed varint size prefix: exceeds 5 bytes");
+            }
+            nextByte = inputStream.read();
+            if (nextByte == -1) {
+                throw new EOFException("Truncated varint size prefix");
+            }
+            size |= (long) (nextByte & 0x7F) << (7 * byteCount);
         }
 
         checkArgument(size > 0, "Size of protobuf message must not be 0");
@@ -84,20 +86,12 @@ public class NetworkEnvelopeSocket implements Closeable {
         // This prevents reading beyond the declared message boundary
         InputStream limitedStream = ByteStreams.limit(inputStream, size);
 
-        try {
-            CodedInputStream codedInput = CodedInputStream.newInstance(limitedStream);
-            codedInput.setRecursionLimit(MAX_RECURSION_LIMIT);
+        CodedInputStream codedInput = CodedInputStream.newInstance(limitedStream);
+        codedInput.setRecursionLimit(MAX_RECURSION_LIMIT);
 
-            bisq.network.protobuf.NetworkEnvelope envelope = bisq.network.protobuf.NetworkEnvelope.parseFrom(codedInput);
-            codedInput.checkLastTagWas(0);
-
-            return envelope;
-
-        } catch (InvalidProtocolBufferException e) {
-            throw new InvalidProtocolBufferException(
-                    "Failed to parse NetworkEnvelope: " + e.getMessage()
-            );
-        }
+        bisq.network.protobuf.NetworkEnvelope envelope = bisq.network.protobuf.NetworkEnvelope.parseFrom(codedInput);
+        codedInput.checkLastTagWas(0);
+        return envelope;
     }
 
     @Override
