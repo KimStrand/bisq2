@@ -17,9 +17,11 @@
 
 package bisq.trade.mu_sig.messages.network.handler;
 
+import bisq.account.accounts.AccountPayload;
 import bisq.common.encoding.Hex;
 import bisq.contract.ContractService;
 import bisq.contract.ContractSignatureData;
+import bisq.contract.Party;
 import bisq.contract.mu_sig.MuSigContract;
 import bisq.trade.mu_sig.protocol.MuSigProtocolException;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 
+import static bisq.offer.options.OfferOptionUtil.createSaltedAccountPayloadHash;
 import static com.google.common.base.Preconditions.checkArgument;
 
 @Slf4j
@@ -40,6 +43,14 @@ public final class MuSigContractVerifier {
         checkContractsEqual(peersContract, myContract);
         checkHashesEqual(peersContractSignatureData, myContractSignatureData);
         verifyPeerSignature(contractService, myContract, peersContractSignatureData);
+    }
+
+    public static void verifyPeerAccountPayload(Party peerParty, String offerId, AccountPayload<?> accountPayload) {
+        byte[] expectedHash = peerParty.getSaltedAccountPayloadHash()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Peer salted account payload hash must be present in contract"));
+        checkArgument(Arrays.equals(expectedHash, createSaltedAccountPayloadHash(accountPayload, offerId)),
+                "Peer account payload does not match the salted account payload hash from the contract");
     }
 
     private static void verifyPeerSignature(ContractService contractService,

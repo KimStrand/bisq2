@@ -81,6 +81,28 @@ public class PersistableStoreReaderWriter<T extends PersistableStore<T>> {
         return readStoreFromFileOrRestoreFromBackup();
     }
 
+    /** Returns empty only when no store or backup exists; failed recovery retains the unreadable files. */
+    public synchronized Optional<T> readOrThrow() {
+        storeFileManager.maybeMigrateLegacyBackupFile();
+        var failure = new IllegalStateException("Could not restore persisted store " + storeFilePath);
+        if (!Files.notExists(storeFilePath)) {
+            Optional<T> store = readStore(storeFilePath, failure);
+            if (store.isPresent()) {
+                return store;
+            }
+        }
+        Optional<T> restored = restoreService.tryToRestoreFromBackup(
+                storeFileManager.getBackupsOrThrow(),
+                path -> readStore(path, failure));
+        if (restored.isPresent()) {
+            return restored;
+        }
+        if (failure.getSuppressed().length > 0) {
+            throw failure;
+        }
+        return Optional.empty();
+    }
+
     /**
      * Throws if the store did not reach the disk, so callers that take follow-up steps on a
      * completed write can tell: {@link CouldNotSerializePersistableStore} as is, anything else
@@ -173,6 +195,41 @@ public class PersistableStoreReaderWriter<T extends PersistableStore<T>> {
             log.warn("Deleted the store file {} which cannot be read, as the store requires", path);
         } catch (IOException e) {
             log.error("Could not delete the store file {} which cannot be read", path, e);
+        }
+    }
+
+    private Optional<T> readStore(Path path, IllegalStateException failure) {
+        try {
+            return Optional.of(readStoreOrThrow(path));
+        } catch (Exception exception) {
+            failure.addSuppressed(new IllegalStateException("Could not read persisted store " + path, exception));
+            // Keep the source so a subsequent startup cannot mistake failed recovery for a first run.
+            Throwable rootCause = ExceptionUtil.getRootCause(exception);
+            String cause = rootCause instanceof IOException ?
+                    rootCause.toString() :
+                    ExceptionUtil.getSafeStackTraceAsString(exception);
+            log.error("Couldn't read {} from file. Cause: {}", path, cause);
+            return Optional.empty();
+        }
+    }
+
+    private T readStoreOrThrow(Path path) throws IOException, UnresolvableProtobufException {
+        try (SkippedEntryCounter skippedEntryCounter = SkippedEntryCounter.open()) {
+            PersistableStore<?> persistableStore = readStoreFromFile(path);
+            // Preserve entries skipped during parsing before the next write removes them.
+            if (skippedEntryCounter.getNumSkippedEntries() > 0) {
+                unreadableStoreArchive.ifPresent(archive ->
+                        archive.archive(storeFilePath, path, UnreadableStoreArchive.Reason.SKIPPED_ENTRIES));
+            }
+            if (!path.equals(storeFilePath)) {
+                // Retain unreadable current data until a readable backup has been found.
+                if (Files.exists(storeFilePath)) {
+                    handleUnreadableFile(storeFilePath);
+                }
+                FileMutatorUtils.copyFile(path, storeFilePath);
+            }
+            //noinspection unchecked
+            return (T) persistableStore;
         }
     }
 

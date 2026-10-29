@@ -24,12 +24,16 @@ import bisq.account.payment_method.PaymentMethodSpec;
 import bisq.account.payment_method.PaymentMethodSpecUtil;
 import bisq.account.payment_method.fiat.FiatPaymentMethod;
 import bisq.account.payment_method.fiat.FiatPaymentRail;
+import bisq.bonded_roles.BondedRoleType;
 import bisq.bonded_roles.BondedRolesService;
+import bisq.bonded_roles.bonded_role.AuthorizedBondedRole;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRolesService;
 import bisq.chat.ChatMessageType;
 import bisq.chat.ChatService;
+import bisq.chat.mu_sig.open_trades.MuSigDisputeAgentType;
 import bisq.chat.mu_sig.open_trades.MuSigOpenTradeChannel;
 import bisq.chat.mu_sig.open_trades.MuSigOpenTradeChannelService;
+import bisq.chat.mu_sig.open_trades.MuSigOpenTradeChannelStore;
 import bisq.chat.mu_sig.open_trades.MuSigOpenTradeMessage;
 import bisq.common.market.Market;
 import bisq.common.network.AddressByTransportTypeMap;
@@ -37,7 +41,9 @@ import bisq.common.network.TransportType;
 import bisq.common.network.clear_net_address_types.LocalHostAddressTypeFacade;
 import bisq.contract.mu_sig.MuSigContract;
 import bisq.i18n.Res;
+import bisq.network.NetworkService;
 import bisq.network.identity.NetworkId;
+import bisq.network.identity.NetworkIdWithKeyPair;
 import bisq.offer.Direction;
 import bisq.offer.amount.spec.BaseSideFixedAmountSpec;
 import bisq.offer.mu_sig.MuSigOffer;
@@ -55,13 +61,17 @@ import bisq.security.keys.PubKey;
 import bisq.security.pow.ProofOfWork;
 import bisq.support.dispute.mu_sig.MuSigDisputeCasePaymentDetailsResponse;
 import bisq.support.dispute.mu_sig.MuSigDisputeCaseDataMessage;
+import bisq.support.mediation.MediationCaseState;
 import bisq.user.UserService;
 import bisq.user.banned.BannedUserService;
+import bisq.user.identity.UserIdentity;
 import bisq.user.identity.UserIdentityService;
 import bisq.user.profile.UserProfile;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.file.Path;
 import java.security.KeyPair;
@@ -70,14 +80,27 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class MuSigMediatorServiceTest {
     private BannedUserService bannedUserService;
+    private PersistenceService persistenceService;
+    private ChatService chatService;
+    private UserService userService;
+    private UserIdentityService userIdentityService;
+    private BondedRolesService bondedRolesService;
+    private AuthorizedBondedRolesService authorizedBondedRolesService;
 
     @BeforeAll
     static void setupRes() {
@@ -86,7 +109,7 @@ class MuSigMediatorServiceTest {
 
     @BeforeEach
     void setUp() {
-        PersistenceService persistenceService = mock(PersistenceService.class);
+        persistenceService = mock(PersistenceService.class);
         @SuppressWarnings("unchecked")
         Persistence<MuSigMediatorStore> persistence = mock(Persistence.class);
         when(persistenceService.getOrCreatePersistence(any(PersistenceClient.class), any(DbSubDirectory.class), any(PersistableStore.class)))
@@ -94,12 +117,12 @@ class MuSigMediatorServiceTest {
         when(persistence.persistAsync(any())).thenReturn(CompletableFuture.completedFuture(null));
         when(persistence.getStorePath()).thenReturn(Path.of("build/test/musig-mediator-service"));
 
-        ChatService chatService = mock(ChatService.class);
+        chatService = mock(ChatService.class);
         MuSigOpenTradeChannelService openTradeChannelService = mock(MuSigOpenTradeChannelService.class);
         when(chatService.getMuSigOpenTradeChannelService()).thenReturn(openTradeChannelService);
 
-        UserService userService = mock(UserService.class);
-        UserIdentityService userIdentityService = mock(UserIdentityService.class);
+        userService = mock(UserService.class);
+        userIdentityService = mock(UserIdentityService.class);
         when(userService.getUserIdentityService()).thenReturn(userIdentityService);
         bannedUserService = mock(BannedUserService.class);
         when(userService.getBannedUserService()).thenReturn(bannedUserService);
@@ -107,9 +130,112 @@ class MuSigMediatorServiceTest {
         when(bannedUserService.isUserProfileBanned(any(UserProfile.class))).thenReturn(false);
         when(bannedUserService.isUserProfileBanned(any(NetworkId.class))).thenReturn(false);
 
-        BondedRolesService bondedRolesService = mock(BondedRolesService.class);
-        AuthorizedBondedRolesService authorizedBondedRolesService = mock(AuthorizedBondedRolesService.class);
+        bondedRolesService = mock(BondedRolesService.class);
+        authorizedBondedRolesService = mock(AuthorizedBondedRolesService.class);
         when(bondedRolesService.getAuthorizedBondedRolesService()).thenReturn(authorizedBondedRolesService);
+    }
+
+    @ParameterizedTest(name = "logArrivesFirst={0}")
+    @ValueSource(booleans = {false, true})
+    void mediationRequestAndSeparateLogCanArriveInEitherOrderWithoutDuplicates(boolean logArrivesFirst) throws Exception {
+        NetworkService networkService = mock(NetworkService.class);
+        @SuppressWarnings("unchecked")
+        Persistence<MuSigOpenTradeChannelStore> chatPersistence = mock(Persistence.class);
+        when(persistenceService.getOrCreatePersistence(any(MuSigOpenTradeChannelService.class),
+                any(DbSubDirectory.class),
+                any(MuSigOpenTradeChannelStore.class))).thenReturn(chatPersistence);
+        when(chatPersistence.persistAsync(any())).thenReturn(CompletableFuture.completedFuture(null));
+        MuSigOpenTradeChannelService channels = new MuSigOpenTradeChannelService(
+                persistenceService,
+                networkService,
+                userService);
+        when(chatService.getMuSigOpenTradeChannelService()).thenReturn(channels);
+
+        UserProfile requester = createUserProfile(1061);
+        UserProfile peer = createUserProfile(1062);
+        UserProfile mediator = createUserProfile(1063);
+        UserIdentity mediatorIdentity = mock(UserIdentity.class);
+        when(mediatorIdentity.getId()).thenReturn(mediator.getId());
+        when(mediatorIdentity.getUserProfile()).thenReturn(mediator);
+        NetworkIdWithKeyPair networkIdentity = mock(NetworkIdWithKeyPair.class);
+        when(networkIdentity.getNetworkId()).thenReturn(mediator.getNetworkId());
+        when(mediatorIdentity.getNetworkIdWithKeyPair()).thenReturn(networkIdentity);
+        when(userIdentityService.findUserIdentity(mediator.getId())).thenReturn(Optional.of(mediatorIdentity));
+        when(userIdentityService.isUserIdentityPresent(mediator.getId())).thenReturn(true);
+        AuthorizedBondedRole role = mock(AuthorizedBondedRole.class);
+        when(role.getBondedRoleType()).thenReturn(BondedRoleType.MEDIATOR);
+        when(role.getProfileId()).thenReturn(mediator.getId());
+        when(authorizedBondedRolesService.getAuthorizedBondedRoleStream(true)).thenAnswer(ignored -> Stream.of(role));
+        when(networkService.confidentialSend(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        MuSigMediatorService service = new MuSigMediatorService(
+                persistenceService,
+                networkService,
+                chatService,
+                userService,
+                bondedRolesService);
+
+        String tradeId = "trade-61";
+        String channelId = MuSigOpenTradeChannel.createId(tradeId);
+        MuSigOpenTradeMessage history = createChatMessage(tradeId, channelId, requester, peer);
+        MuSigMediationRequest request = createMediationRequest(tradeId, requester, peer, mediator, List.of(history));
+        MuSigOpenTradeMessage logMessage = new MuSigOpenTradeMessage(
+                tradeId,
+                "request-log-" + tradeId,
+                channelId,
+                requester,
+                mediator.getId(),
+                mediator.getNetworkId(),
+                Res.encode("muSig.mediation.requester.tradeLogMessage", "requester"),
+                Optional.empty(),
+                history.getDate() + 1,
+                false,
+                Optional.empty(),
+                Optional.empty(),
+                ChatMessageType.PROTOCOL_LOG_MESSAGE,
+                Optional.empty(),
+                Set.of());
+
+        if (logArrivesFirst) {
+            channels.onMessage(MuSigOpenTradeMessage.fromProto(logMessage.toValueProto(false)));
+            channels.onMessage(MuSigOpenTradeMessage.fromProto(logMessage.toValueProto(false)));
+            assertThat(channels.getChannels()).isEmpty();
+            assertThat(service.getMediationCases()).isEmpty();
+            verifyNoInteractions(networkService);
+        }
+
+        service.onMessage(MuSigMediationRequest.fromProto(request.toValueProto(false)));
+
+        MuSigOpenTradeChannel channel = channels.findChannelByTradeId(tradeId).orElseThrow();
+        if (!logArrivesFirst) {
+            assertThat(channel.getChatMessages()).doesNotContain(logMessage);
+            channels.onMessage(MuSigOpenTradeMessage.fromProto(logMessage.toValueProto(false)));
+        }
+        assertThat(channels.getChannels()).containsExactly(channel);
+        assertThat(channel.getDisputeAgentType()).isEqualTo(MuSigDisputeAgentType.MEDIATOR);
+        assertThat(channel.getChatMessages()).contains(history);
+        assertThat(channel.getChatMessages())
+                .filteredOn(message -> message.getId().equals(logMessage.getId()))
+                .containsExactly(logMessage);
+        Set<MuSigOpenTradeMessage> messagesBeforeDuplicates = Set.copyOf(channel.getChatMessages());
+
+        channels.onMessage(MuSigOpenTradeMessage.fromProto(logMessage.toValueProto(false)));
+        service.onMessage(MuSigMediationRequest.fromProto(request.toValueProto(false)));
+
+        assertThat(channel.getChatMessages()).containsExactlyInAnyOrderElementsOf(messagesBeforeDuplicates);
+        assertThat(service.getMediationCases()).singleElement().satisfies(mediationCase -> {
+            assertThat(mediationCase.getMediationCaseState()).isEqualTo(MediationCaseState.OPEN);
+            assertThat(mediationCase.getMuSigMediationRequest().getTradeId()).isEqualTo(tradeId);
+            assertThat(mediationCase.getMuSigMediationRequest().getChatMessages()).containsExactly(history);
+        });
+        for (UserProfile trader : List.of(requester, peer)) {
+            verify(networkService).confidentialSend(argThat(message ->
+                            message instanceof MuSigMediationStateChangeMessage change &&
+                                    change.getTradeId().equals(tradeId) &&
+                                    change.getMediationCaseState() == MediationCaseState.OPEN),
+                    eq(trader.getNetworkId()),
+                    same(networkIdentity));
+        }
+        verifyNoMoreInteractions(networkService);
     }
 
     @Test

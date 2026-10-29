@@ -27,6 +27,7 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -256,6 +257,17 @@ public class BackupService {
     public List<BackupFileInfo> getBackups() {
         Set<Path> paths = FileReaderUtils.listRegularFilesAsPath(dirPath);
         return createBackupFileInfo(fileName, paths);
+    }
+
+    public List<BackupFileInfo> getBackupsOrThrow() {
+        if (Files.notExists(dirPath)) {
+            return List.of();
+        }
+        try (var paths = Files.list(dirPath)) {
+            return createBackupFileInfo(fileName, paths.filter(Files::isRegularFile).collect(Collectors.toSet()));
+        } catch (IOException exception) {
+            throw new UncheckedIOException("Could not read backups at " + dirPath, exception);
+        }
     }
 
     /* --------------------------------------------------------------------- */

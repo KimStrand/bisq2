@@ -136,6 +136,18 @@ public class MuSigOpenTradeChannelService extends PrivateGroupChatChannelService
         return sendMessage(text, Optional.empty(), ChatMessageType.PROTOCOL_LOG_MESSAGE, channel);
     }
 
+    public void addLocalTradeLogMessage(String text, String authorId, MuSigOpenTradeChannel channel) {
+        UserProfile author = Stream.concat(
+                        Stream.concat(Stream.of(channel.getMyUserIdentity().getUserProfile()),
+                                channel.getTraders().stream()),
+                        Stream.concat(channel.getMediator().stream(), channel.getArbitrator().stream()))
+                .filter(profile -> profile.getId().equals(authorId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Local log author is not part of the trade chat"));
+        addChatMessage(channel, author, text);
+        persist();
+    }
+
     public CompletableFuture<SendMessageResult> sendTextMessage(String text,
                                                                 Optional<Citation> citation,
                                                                 MuSigOpenTradeChannel channel) {

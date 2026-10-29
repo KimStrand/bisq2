@@ -355,3 +355,350 @@ message MuSigCustomPayoutPsbtMessage {
 message MuSigMediationResultRejectionMessage {
   bytes mediationResultHash = 1;
 }
+
+// MuSig V2 local persistence. Separate from the V1 store and wire protocol.
+// Shared event identities and failure details
+
+enum MuSigV2EventType {
+  TYPE_UNSPECIFIED = 0;
+  TAKE_OFFER = 1;
+  SETUP_A = 2;
+  SETUP_B = 3;
+  SETUP_C = 4;
+  SETUP_D = 5;
+  ACCOUNT_PAYLOAD_AND_DEPOSIT = 6;
+  ACCOUNT_PAYLOAD = 7;
+  PAYMENT_INITIATED = 8;
+  PAYMENT_RECEIVED = 9;
+  COOPERATIVE_CLOSURE = 10;
+  DEPOSIT_CONFIRMED = 11;
+  PAYMENT_RECEIPT_CONFIRMED = 12;
+  CLOSE_TIMEOUT = 13;
+  MEDIATION_REQUESTED = 14;
+  MEDIATION_OPENED = 15;
+  MEDIATION_CLOSED = 16;
+  MEDIATION_RESULT_ACCEPTED = 17;
+  MEDIATION_RESULT_REJECTED = 18;
+  MEDIATION_RESULT_BY_MYSELF_ACCEPTED = 19;
+  MEDIATION_RESULT_BY_PEER_ACCEPTED = 20;
+  PEER_CUSTOM_PAYOUT = 21;
+  PEER_RESULT_REJECTION = 22;
+  PAYMENT_INITIATED_EVENT = 23;
+  PROCESSING_FAILED = 24;
+  REPORT_ERROR = 25;
+  TRADE_ARCHIVED = 26;
+  EXECUTION_FAILED = 27;
+  MEDIATION_PAYMENT_DETAILS_REQUESTED = 28;
+  BUYER_CLOSE_TIMEOUT = 29;
+  DEPOSIT_CONFIRMATION_SKIPPED = 30;
+}
+
+message MuSigV2FailureDetails {
+  TradeProtocolFailure tradeProtocolFailure = 1;
+  string errorMessage = 2;
+  string errorStackTrace = 3;
+}
+
+// MuSig V2 execution
+
+message MuSigTradeExecutionState {
+  message Failed {
+  }
+  message FailedAtPeer {
+  }
+  message Init {
+  }
+  message TradeInitializedAndNonceSharesCreated {
+  }
+  message PartialSignaturesCreatedAndDepositTxSigned {
+  }
+  message TradeInitialized {
+  }
+  message NonceSharesAndPartialSignaturesCreated {
+  }
+  message DepositTxSignedAndPublished {
+  }
+  message AccountPayloadReceived {
+  }
+  message DepositTxConfirmed {
+  }
+  message PaymentInitiatedMessageReceived {
+  }
+  message PaymentReceiptConfirmed {
+  }
+  message CustomPayoutSigned {
+  }
+  message CustomPayoutClosedTrade {
+  }
+  message SellerForceClosedTrade {
+  }
+  message TradeClosed {
+  }
+  message PaymentInitiated {
+  }
+  oneof message {
+    Init init = 1;
+    TradeInitialized tradeInitialized = 2;
+    NonceSharesAndPartialSignaturesCreated nonceSharesAndPartialSignaturesCreated = 3;
+    DepositTxSignedAndPublished depositTxSignedAndPublished = 4;
+    AccountPayloadReceived accountPayloadReceived = 5;
+    DepositTxConfirmed depositTxConfirmed = 6;
+    PaymentInitiatedMessageReceived paymentInitiatedMessageReceived = 7;
+    PaymentReceiptConfirmed paymentReceiptConfirmed = 8;
+    CustomPayoutSigned customPayoutSigned = 9;
+    CustomPayoutClosedTrade customPayoutClosedTrade = 10;
+    SellerForceClosedTrade sellerForceClosedTrade = 11;
+    TradeClosed tradeClosed = 12;
+    PaymentInitiated paymentInitiated = 13;
+    TradeInitializedAndNonceSharesCreated tradeInitializedAndNonceSharesCreated = 14;
+    PartialSignaturesCreatedAndDepositTxSigned partialSignaturesCreatedAndDepositTxSigned = 15;
+    Failed failed = 16;
+    FailedAtPeer failedAtPeer = 17;
+  }
+}
+
+message MuSigV2TradeExecution {
+  MuSigTradeExecutionState state = 1;
+  MuSigV2TradeExecutionData data = 2;
+}
+
+message MuSigV2TradeExecutionData {
+  optional PubKeyShares myPubKeyShares = 1;
+  optional contract.ContractSignatureData myContractSignature = 2;
+  optional contract.ContractSignatureData peerContractSignature = 3;
+  optional PubKeyShares peerPubKeyShares = 4;
+  optional NonceShares peerNonceShares = 5;
+  optional musigrpc.NonceSharesMessage myNonceShares = 6;
+  optional musigrpc.PartialSignaturesMessage myPartialSignatures = 7;
+  optional PartialSignatures peerRedactedPartialSignatures = 8;
+  optional PartialSignatures peerPartialSignatures = 9;
+  optional musigrpc.DepositPsbt myDepositPsbt = 10;
+  optional musigrpc.DepositPsbt peerDepositPsbt = 11;
+  optional account.AccountPayload peerAccountPayload = 12;
+  optional musigrpc.SwapTxSignatureResponse mySwapTxSignatureResponse = 13;
+  optional common.ByteArray peersOutputPrvKeyShare = 14;
+  optional musigrpc.CloseTradeResponse myCloseTradeResponse = 15;
+  optional musigrpc.CustomPayoutPsbt myCustomPayoutPsbt = 16;
+  optional PeerCustomPayoutPsbt peerCustomPayoutPsbt = 17;
+  optional musigrpc.CustomCloseTradeResponse customCloseTradeResponse = 18;
+  optional SwapTxSignature peerSwapTxSignature = 19;
+  optional common.ByteArray peerDepositTx = 20;
+  optional MuSigV2FailureDetails myFailure = 21;
+  optional MuSigV2FailureDetails peerFailure = 22;
+}
+
+// MuSig V2 mediation
+
+message MuSigMediationDecisionState {
+  message Init {
+  }
+  message Accepted {
+  }
+  message Rejected {
+  }
+  message Failed {
+  }
+  oneof message {
+    Init init = 1;
+    Accepted accepted = 2;
+    Rejected rejected = 3;
+    Failed failed = 4;
+  }
+}
+
+message MuSigV2MediationDecision {
+  MuSigMediationDecisionState state = 1;
+  MuSigV2MediationDecisionData data = 2;
+}
+
+message MuSigV2MediationDecisionData {
+  optional MuSigV2FailureDetails failure = 1;
+}
+
+message MuSigMediationState {
+  message Init {
+  }
+  message Requested {
+  }
+  message Open {
+  }
+  message Closed {
+  }
+  message Failed {
+  }
+  oneof message {
+    Init init = 1;
+    Requested requested = 2;
+    Open open = 3;
+    Closed closed = 4;
+    Failed failed = 5;
+  }
+}
+
+message MuSigV2Mediation {
+  MuSigMediationState state = 1;
+  MuSigV2MediationData data = 2;
+  MuSigV2MediationDecision myDecision = 3;
+  MuSigV2MediationDecision peerDecision = 4;
+}
+
+message MuSigV2MediationData {
+  optional support.MuSigMediationResult result = 1;
+  optional bytes signature = 2;
+  optional MuSigV2FailureDetails failure = 3;
+}
+
+// MuSig V2 trade
+
+message MuSigTradeState {
+  message Active {
+  }
+  message Failed {
+  }
+  message Historical {
+  }
+  oneof message {
+    Active active = 1;
+    Failed failed = 2;
+    Historical historical = 3;
+  }
+}
+
+message MuSigV2Trade {
+  string id = 1;
+  MuSigTradeState state = 2;
+  MuSigV2TradeData data = 3;
+  MuSigV2TradeExecution execution = 4;
+  optional MuSigV2Mediation mediation = 5;
+}
+
+message MuSigV2TradeData {
+  contract.Contract contract = 1;
+  identity.Identity myIdentity = 2;
+  TradeRole myRole = 3;
+  string protocolVersion = 4;
+  account.AccountPayload myAccountPayload = 5;
+}
+
+// MuSig V2 events
+
+message MuSigTakeOfferEvent {
+}
+
+message DepositTxConfirmedEvent {
+}
+
+message DepositConfirmationSkippedEvent {
+}
+
+message PaymentInitiatedEvent {
+}
+
+message PaymentReceiptConfirmedEvent {
+}
+
+message SellersCloseTradeTimeoutEvent {
+}
+
+message BuyersCloseTradeTimeoutEvent {
+}
+
+message MediationResultAcceptedEvent {
+}
+
+message MediationResultRejectedEvent {
+}
+
+message MediationRequestedEvent {
+}
+
+message MediationOpenedEvent {
+  support.MuSigMediationStateChangeMessage message = 1;
+}
+
+message MediationClosedEvent {
+  support.MuSigMediationStateChangeMessage message = 1;
+}
+
+message MediationPaymentDetailsRequestedEvent {
+  support.MuSigDisputeCasePaymentDetailsRequest message = 1;
+}
+
+message MediationResultByMyselfAcceptedEvent {
+  support.MuSigMediationResult result = 1;
+}
+
+message MediationResultByPeerAcceptedEvent {
+  PeerCustomPayoutPsbt psbt = 1;
+}
+
+message MuSigProcessingFailedEvent {
+  TradeProtocolFailure tradeProtocolFailure = 1;
+  string errorMessage = 2;
+  string stackTrace = 3;
+}
+
+message TradeArchivedEvent {
+}
+
+message ExecutionFailedEvent {
+}
+
+message TradeEvent {
+  oneof event {
+    MuSigTradeEvent muSigTradeEvent = 1;
+  }
+}
+
+message MuSigTradeEvent {
+  oneof event {
+    MuSigTakeOfferEvent takeOffer = 1;
+    DepositTxConfirmedEvent depositTxConfirmed = 2;
+    PaymentInitiatedEvent paymentInitiated = 3;
+    PaymentReceiptConfirmedEvent paymentReceiptConfirmed = 4;
+    SellersCloseTradeTimeoutEvent sellersCloseTradeTimeout = 5;
+    MediationResultAcceptedEvent mediationResultAccepted = 6;
+    MediationResultRejectedEvent mediationResultRejected = 7;
+    MediationRequestedEvent mediationRequested = 8;
+    MediationOpenedEvent mediationOpened = 9;
+    MediationClosedEvent mediationClosed = 10;
+    MediationResultByMyselfAcceptedEvent mediationResultByMyselfAccepted = 11;
+    MediationResultByPeerAcceptedEvent mediationResultByPeerAccepted = 12;
+    MuSigProcessingFailedEvent processingFailed = 13;
+    TradeArchivedEvent tradeArchived = 14;
+    ExecutionFailedEvent executionFailed = 15;
+    MediationPaymentDetailsRequestedEvent mediationPaymentDetailsRequested = 16;
+    BuyersCloseTradeTimeoutEvent buyersCloseTradeTimeout = 17;
+    DepositConfirmationSkippedEvent depositConfirmationSkipped = 18;
+  }
+}
+
+// MuSig V2 domain effects
+
+message ActivateMediationChat {
+}
+
+message ObserveDepositTxConfirmation {
+}
+
+message RemoveTakenOffer {
+}
+
+// MuSig V2 store
+
+message MuSigV2TradeRecord {
+  // Protobuf maps cannot contain repeated values directly.
+  message ProcessedEventTypes {
+    repeated MuSigV2EventType types = 1;
+  }
+
+  MuSigV2Trade trade = 1;
+  repeated common.Delivery pendingInputs = 2;
+  repeated common.ScheduledEvent scheduledEvents = 3;
+  repeated common.Effect pendingEffects = 4;
+  map<string, ProcessedEventTypes> processedEventTypes = 5;
+}
+
+message MuSigV2TradeStore {
+  map<string, MuSigV2TradeRecord> tradeById = 1;
+}

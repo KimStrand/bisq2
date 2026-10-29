@@ -17,7 +17,9 @@ dependencies {
     implementation(project(":trade"))
 
     implementation("network:network:$version")
+    implementation("network:network-identity:$version")
 
+    implementation(libs.protobuf.java)
     implementation(libs.typesafe.config)
 
     // StorageRequestsOfEarlierVersionTest parses serialized network messages

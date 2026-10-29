@@ -21,6 +21,9 @@ package common;
 option java_package = "bisq.common.protobuf";
 option java_multiple_files = true;
 
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+
 message ByteArray {
   bytes bytes = 1;
 }
@@ -120,4 +123,34 @@ message Address {
 
 message AddressByTransportTypeMap {
   map<string, Address> addressByTransportType = 1;
+}
+
+// State-machine inputs and unfinished work
+
+message Event {
+  google.protobuf.Any payload = 1;
+}
+
+message Delivery {
+  string flow = 1;
+  Event event = 2;
+}
+
+message ScheduledEvent {
+  string id = 1;
+  google.protobuf.Timestamp triggerAt = 2;
+  Event event = 3;
+}
+
+message CancelScheduledEvent {
+  string id = 1;
+}
+
+message SendMessage {
+  google.protobuf.Any message = 1;
+  google.protobuf.Any receiver = 2;
+}
+
+message Effect {
+  google.protobuf.Any payload = 1;
 }

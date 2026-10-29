@@ -73,6 +73,11 @@ public class Persistence<T extends PersistableStore<T>> {
         return persistableStoreReaderWriter.read();
     }
 
+    /** Returns empty for a first run and throws when existing data cannot be restored. */
+    public Optional<T> readOrThrow() {
+        return persistableStoreReaderWriter.readOrThrow();
+    }
+
     public CompletableFuture<Void> persistAsync(T serializable) {
         return CompletableFuture.runAsync(() -> persist(serializable), EXECUTOR);
     }

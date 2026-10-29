@@ -43,6 +43,7 @@ import java.security.PublicKey;
 @Getter
 @EqualsAndHashCode
 public abstract class TradeMessage implements MailboxMessage, ExternalNetworkMessage, AckRequestingMessage, Event,
+        bisq.common.statemachine.Event,
         SenderPublicKeyProvidingPayload, ReceiverPublicKeyProvidingPayload {
     private final String id;
     private final String tradeId;

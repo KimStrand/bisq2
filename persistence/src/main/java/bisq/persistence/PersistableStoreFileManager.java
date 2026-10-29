@@ -97,6 +97,10 @@ public class PersistableStoreFileManager {
         return List.copyOf(backupService.getBackups());
     }
 
+    public List<BackupFileInfo> getBackupsOrThrow() {
+        return List.copyOf(backupService.getBackupsOrThrow());
+    }
+
     private Path createTempFilePath() {
         String tempFileName = TEMP_FILE_PREFIX + storeFilePath.getFileName();
         return parentDirectoryPath.resolve(tempFileName);

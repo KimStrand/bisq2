@@ -42,6 +42,11 @@ import bisq.chat.reactions.CommonPublicChatMessageReaction;
 import bisq.chat.reactions.MuSigOpenTradeMessageReaction;
 import bisq.chat.reactions.TwoPartyPrivateChatMessageReaction;
 import bisq.chat.two_party.TwoPartyPrivateChatMessage;
+import bisq.common.processing.Effect;
+import bisq.common.statemachine.StateMachineResolver;
+import bisq.network.identity.NetworkId;
+import bisq.network.p2p.message.EnvelopePayloadMessage;
+import bisq.network.p2p.message.ExternalNetworkMessage;
 import bisq.network.p2p.message.NetworkMessageResolver;
 import bisq.network.p2p.services.confidential.ack.AckMessage;
 import bisq.network.p2p.services.data.storage.DistributedDataResolver;
@@ -49,11 +54,11 @@ import bisq.network.p2p.services.data.storage.StorableTypesRegistry;
 import bisq.offer.mu_sig.MuSigOfferMessage;
 import bisq.support.arbitration.mu_sig.MuSigArbitrationRequest;
 import bisq.support.arbitration.mu_sig.MuSigArbitrationStateChangeMessage;
-import bisq.support.mediation.bisq_easy.BisqEasyMediationRequest;
-import bisq.support.mediation.bisq_easy.BisqEasyMediatorsResponse;
 import bisq.support.dispute.mu_sig.MuSigDisputeCaseDataMessage;
 import bisq.support.dispute.mu_sig.MuSigDisputeCasePaymentDetailsRequest;
 import bisq.support.dispute.mu_sig.MuSigDisputeCasePaymentDetailsResponse;
+import bisq.support.mediation.bisq_easy.BisqEasyMediationRequest;
+import bisq.support.mediation.bisq_easy.BisqEasyMediatorsResponse;
 import bisq.support.mediation.mu_sig.MuSigMediationRequest;
 import bisq.support.mediation.mu_sig.MuSigMediationStateChangeMessage;
 import bisq.support.moderator.ReportToModeratorMessage;
@@ -79,7 +84,11 @@ import bisq.trade.mu_sig.messages.network.SetupTradeMessage_A;
 import bisq.trade.mu_sig.messages.network.SetupTradeMessage_B;
 import bisq.trade.mu_sig.messages.network.SetupTradeMessage_C;
 import bisq.trade.mu_sig.messages.network.SetupTradeMessage_D;
+import bisq.trade.mu_sig_v2.protocol.execution.ObserveDepositTxConfirmation;
+import bisq.trade.mu_sig_v2.protocol.execution.RemoveTakenOffer;
+import bisq.trade.mu_sig_v2.protocol.mediation.ActivateMediationChat;
 import bisq.trade.protocol.messages.TradeMessage;
+import bisq.trade.protocol.v2.events.TradeEvent;
 import bisq.user.banned.BannedUserProfileData;
 import bisq.user.profile.UserProfile;
 import bisq.user.reputation.data.AuthorizedAccountAgeData;
@@ -144,6 +153,26 @@ public class ResolverConfig {
         NetworkMessageResolver.addResolver("support.ReportToModeratorMessage", ReportToModeratorMessage.class, ReportToModeratorMessage.getNetworkMessageResolver());
         NetworkMessageResolver.addResolver("account.AuthorizeAccountTimestampV1Request", AuthorizeAccountTimestampV1Request.class, AuthorizeAccountTimestampV1Request.getNetworkMessageResolver());
         NetworkMessageResolver.addResolver("account.AuthorizeAccountTimestampV2Request", AuthorizeAccountTimestampV2Request.class, AuthorizeAccountTimestampV2Request.getNetworkMessageResolver());
+
+
+        // Register resolvers for persisted state-machine work before loading stores.
+        // P2P payloads use the network resolvers registered above.
+        StateMachineResolver.addResolver("network.EnvelopePayloadMessage", bisq.network.protobuf.EnvelopePayloadMessage.class,
+                EnvelopePayloadMessage::fromProto);
+        StateMachineResolver.addResolver("network.identity.NetworkId", bisq.network.identity.protobuf.NetworkId.class,
+                NetworkId::fromProto);
+        StateMachineResolver.addResolver("common.SendMessage", bisq.common.protobuf.SendMessage.class,
+                proto -> Effect.SendMessage.fromProto(proto,
+                        any -> ExternalNetworkMessage.class.cast(StateMachineResolver.fromAny(any)),
+                        any -> NetworkId.class.cast(StateMachineResolver.fromAny(any))));
+        StateMachineResolver.addResolver("trade.TradeEvent", bisq.trade.protobuf.TradeEvent.class,
+                TradeEvent::fromProto);
+        StateMachineResolver.addResolver("trade.ActivateMediationChat", bisq.trade.protobuf.ActivateMediationChat.class,
+                ActivateMediationChat::fromProto);
+        StateMachineResolver.addResolver("trade.ObserveDepositTxConfirmation", bisq.trade.protobuf.ObserveDepositTxConfirmation.class,
+                ObserveDepositTxConfirmation::fromProto);
+        StateMachineResolver.addResolver("trade.RemoveTakenOffer", bisq.trade.protobuf.RemoveTakenOffer.class,
+                RemoveTakenOffer::fromProto);
 
 
         // The network storage accepts only the types registered here. It takes their MetaData only from the

@@ -28,3 +28,4 @@ Some older docs may still exist for historical context, but new work should foll
 - [Backward Compatibility](backward-compatibility.md)
 - [Payment Account Domain](payment-account-domain.md)
 - [Reputation-Based Trade Amount](reputation-based-trade-amount.md)
+- [MuSig V2 architecture (experiment)](mu-sig-v2/architecture-overview.md)
