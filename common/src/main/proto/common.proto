@@ -124,6 +124,20 @@ message AddressByTransportTypeMap {
   map<string, Address> addressByTransportType = 1;
 }
 
+// State-machine inputs and unfinished work
+
+message Event {
+  google.protobuf.Any payload = 1;
+}
+
+
+
+message ScheduledEvent {
+  string id = 1;
+  sint64 deadline = 2;
+  Event event = 3;
+}
+
 message SendMessage {
   google.protobuf.Any message = 1;
   google.protobuf.Any receiver = 2;
