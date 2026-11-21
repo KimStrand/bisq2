@@ -34,6 +34,8 @@ import bisq.user.profile.UserProfile;
 import bisq.user.profile.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.HashSet;
 import java.util.Optional;
@@ -41,10 +43,14 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -59,6 +65,8 @@ class MuSigOpenTradeChannelServiceTest {
     private static final String TRADE_ID = "tradeId";
 
     private MuSigOpenTradeChannelService service;
+    private NetworkService networkService;
+    private Persistence<MuSigOpenTradeChannelStore> persistence;
     private UserIdentity makerIdentity;
     private UserProfile taker;
     private UserProfile thirdUser;
@@ -67,7 +75,7 @@ class MuSigOpenTradeChannelServiceTest {
     @SuppressWarnings({"unchecked", "rawtypes"})
     void setUp() {
         PersistenceService persistenceService = mock(PersistenceService.class);
-        Persistence persistence = mock(Persistence.class);
+        persistence = mock(Persistence.class);
         when(persistenceService.getOrCreatePersistence(any(), any(DbSubDirectory.class), any(PersistableStore.class)))
                 .thenReturn(persistence);
         when(persistence.persistAsync(any())).thenReturn(CompletableFuture.completedFuture(null));
@@ -80,10 +88,13 @@ class MuSigOpenTradeChannelServiceTest {
 
         makerIdentity = mock(UserIdentity.class);
         when(makerIdentity.getId()).thenReturn(MAKER_PROFILE_ID);
+        UserProfile makerProfile = userProfile(MAKER_PROFILE_ID);
+        when(makerIdentity.getUserProfile()).thenReturn(makerProfile);
         taker = userProfile(TAKER_PROFILE_ID);
         thirdUser = userProfile(THIRD_USER_PROFILE_ID);
 
-        service = new MuSigOpenTradeChannelService(persistenceService, mock(NetworkService.class), userService);
+        networkService = mock(NetworkService.class);
+        service = new MuSigOpenTradeChannelService(persistenceService, networkService, userService);
     }
 
     @Test
@@ -175,6 +186,57 @@ class MuSigOpenTradeChannelServiceTest {
         assertEquals(PendingTradeChatMessages.MAX_PENDING_MESSAGES - 1, service.getNumPendingMessages());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"myself", "peer", "mediator", "arbitrator"})
+    void localLogUsesChannelAuthorAndDoesNotSendMessages(String authorRole) {
+        MuSigOpenTradeChannel channel = createLocalLogChannel();
+        UserProfile myself = makerIdentity.getUserProfile();
+        UserProfile author = switch (authorRole) {
+            case "myself" -> myself;
+            case "peer" -> taker;
+            case "mediator" -> thirdUser;
+            case "arbitrator" -> channel.getArbitrator().orElseThrow();
+            default -> throw new IllegalArgumentException(authorRole);
+        };
+
+        service.addLocalTradeLogMessage("Local notice", author.getId(), channel);
+
+        assertEquals(1, channel.getChatMessages().size());
+        var message = channel.getChatMessages().stream().findFirst().orElseThrow();
+        assertEquals(Optional.of("Local notice"), message.getText());
+        assertEquals(ChatMessageType.PROTOCOL_LOG_MESSAGE, message.getChatMessageType());
+        assertEquals(author.getId(), message.getAuthorUserProfileId());
+        assertSame(author, message.getSenderUserProfile());
+        assertEquals(myself.getId(), message.getReceiverUserProfileId());
+        assertSame(myself.getNetworkId(), message.getReceiverNetworkId());
+        assertEquals(channel.getId(), message.getChannelId());
+        assertEquals(channel.getTradeId(), message.getTradeId());
+        assertEquals(MuSigDisputeAgentType.NONE, channel.getDisputeAgentType());
+        verify(persistence).persistAsync(argThat(saved -> saved.getChannels().contains(channel)));
+        verifyNoInteractions(networkService);
+    }
+
+    @Test
+    void unknownLocalAuthorIsRejectedWithoutAddingOrSendingAMessage() {
+        MuSigOpenTradeChannel channel = createLocalLogChannel();
+        assertThrows(IllegalArgumentException.class,
+                () -> service.addLocalTradeLogMessage("Local notice", "5".repeat(40), channel));
+
+        assertTrue(channel.getChatMessages().isEmpty());
+        verifyNoInteractions(persistence, networkService);
+    }
+
+    private MuSigOpenTradeChannel createLocalLogChannel() {
+        MuSigOpenTradeChannel channel = MuSigOpenTradeChannel.create(TRADE_ID,
+                makerIdentity,
+                Set.of(taker),
+                Optional.of(thirdUser),
+                Optional.of(userProfile(OTHER_OWN_PROFILE_ID)),
+                MuSigDisputeAgentType.NONE);
+        service.getChannels().add(channel);
+        return channel;
+    }
+
     private MuSigOpenTradeChannel createChannel() {
         return service.traderFindOrCreatesChannel(TRADE_ID, makerIdentity, taker, Optional.empty(), Optional.empty());
     }
@@ -182,6 +244,8 @@ class MuSigOpenTradeChannelServiceTest {
     private static UserProfile userProfile(String id) {
         UserProfile userProfile = mock(UserProfile.class);
         when(userProfile.getId()).thenReturn(id);
+        NetworkId networkId = networkIdOf(id);
+        when(userProfile.getNetworkId()).thenReturn(networkId);
         return userProfile;
     }
 

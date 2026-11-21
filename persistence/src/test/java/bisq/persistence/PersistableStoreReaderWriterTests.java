@@ -31,12 +31,45 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class PersistableStoreReaderWriterTests {
+
+    @Test
+    void persistenceReportsWriteFailure(@TempDir Path directory) throws Exception {
+        var persistence = new Persistence<TimestampStore>(directory,
+                "StrictStore",
+                MaxBackupSize.ZERO,
+                new RestoreService());
+        // The writer must not report success when its temporary file cannot be opened.
+        Files.createDirectory(directory.resolve("temp_strict_store.protobuf"));
+        assertThrows(CompletionException.class, () -> persistence.persistAsync(new TimestampStore()).join());
+    }
+
+    @Test
+    void aMissingCurrentFileIsNotRestoredFromABackup(@TempDir Path directory) throws IOException {
+        var original = new TimestampStore();
+        original.getTimestampsByProfileId().put("saved", 42L);
+        PersistableStoreResolver.addResolver(original);
+        var manager = new PersistableStoreFileManager(directory.resolve("db/private/store.protobuf"),
+                MaxBackupSize.TEN_MB);
+        var writer = new PersistableStoreReaderWriter<TimestampStore>(manager, new RestoreService());
+        writer.write(original);
+        assertTrue(manager.maybeBackup());
+        Files.delete(manager.getStoreFilePath());
+        assertTrue(Files.notExists(manager.getStoreFilePath()));
+
+        var restored = writer.read();
+
+        assertTrue(restored.isEmpty());
+        assertTrue(Files.notExists(manager.getStoreFilePath()));
+        assertEquals(1, manager.getBackups().size());
+    }
 
     @Test
     void readNotExistingStore(@TempDir Path tempDirPath) {
@@ -179,4 +212,5 @@ public class PersistableStoreReaderWriterTests {
         // Triggers rename
         persistableStoreReaderWriter.write(timestampStore);
     }
+
 }
