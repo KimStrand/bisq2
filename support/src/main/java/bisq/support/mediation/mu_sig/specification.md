@@ -27,7 +27,9 @@ Out of scope:
 * `MuSigMediationRequest` is the message used by a trader to request mediation.
 * `MuSigMediationCase` is the mediator-side persisted case for one trade.
 * `MuSigMediationResult` is the mediator's proposed resolution for the trade.
-* `MuSigMediationStateChangeMessage` informs traders about mediation state changes.
+* `MuSigMediationOpenedMessage` informs traders that the mediator opened the case.
+* `MuSigMediationClosedMessage` informs traders that the mediator closed the case. It carries the mediation result
+  and the mediator's signature for it.
 * `requester` is the trader who requested mediation.
 * `peer` is the other trader in the trade.
 * `maker` and `taker` are the contract roles used for contract signatures and payment account payload hashes.
@@ -78,7 +80,7 @@ Rules:
 * If a case with the same `tradeId` already exists, the request is ignored.
 * A local mediator identity matching the contract mediator must exist.
 * A `MuSigMediationCase` is created and persisted.
-* An `OPEN` state change message is sent to requester and peer.
+* A `MuSigMediationOpenedMessage` is sent to requester and peer.
 * Mediation-opened trade log messages are added for requester and peer.
 
 If the local mediator identity cannot be found, the request is ignored.
@@ -98,7 +100,7 @@ Channel setup:
 
 `MuSigDisputeCaseDataMessage` is accepted only for known mediation cases.
 
-The message is sent by the peer who did not request mediation after that peer receives the mediator's `OPEN` state change.
+The message is sent by the peer who did not request mediation after that peer receives the mediator's `MuSigMediationOpenedMessage`.
 
 Purpose:
 
@@ -165,7 +167,7 @@ Rules:
 * The signed result is stored in the case.
 * The case state is set to `CLOSED`.
 * If the result, signature, or state changed, the case is persisted.
-* A state change message is sent to requester and peer.
+* A `MuSigMediationClosedMessage` with the result and its signature is sent to requester and peer.
 * A trade log message is sent to the trade channel.
 
 Immutability:

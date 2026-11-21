@@ -100,13 +100,18 @@ message MuSigDisputeCasePaymentDetailsResponse {
   account.AccountPayload makerAccountPayload = 4;
 }
 
-message MuSigMediationStateChangeMessage {
+message MuSigMediationOpenedMessage {
   string id = 1;
   string tradeId = 2;
   network.identity.NetworkId senderNetworkId = 3;
-  MediationCaseState mediationCaseState = 4;
-  optional MuSigMediationResult muSigMediationResult = 5;
-  optional bytes mediationResultSignature = 6;
+}
+
+message MuSigMediationClosedMessage {
+  string id = 1;
+  string tradeId = 2;
+  network.identity.NetworkId senderNetworkId = 3;
+  MuSigMediationResult muSigMediationResult = 4;
+  bytes mediationResultSignature = 5;
 }
 
 message MuSigDisputeCaseDataMessage {
@@ -194,13 +199,18 @@ message MuSigArbitrationResult {
   optional string summaryNotes = 7;
 }
 
-message MuSigArbitrationStateChangeMessage {
+message MuSigArbitrationOpenedMessage {
   string id = 1;
   string tradeId = 2;
   network.identity.NetworkId senderNetworkId = 3;
-  ArbitrationCaseState arbitrationCaseState = 4;
-  optional MuSigArbitrationResult muSigArbitrationResult = 5;
-  optional bytes arbitrationResultSignature = 6;
+}
+
+message MuSigArbitrationClosedMessage {
+  string id = 1;
+  string tradeId = 2;
+  network.identity.NetworkId senderNetworkId = 3;
+  MuSigArbitrationResult muSigArbitrationResult = 4;
+  bytes arbitrationResultSignature = 5;
 }
 
 enum MuSigArbitrationIssueType {

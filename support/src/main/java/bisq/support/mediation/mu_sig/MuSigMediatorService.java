@@ -192,7 +192,7 @@ public class MuSigMediatorService extends RateLimitedPersistenceClient<MuSigMedi
             boolean stateChanged = muSigMediationCase.setMediationCaseState(MediationCaseState.CLOSED);
             if (resultChanged || stateChanged) {
                 persist();
-                sendMediationCaseStateChangeMessage(muSigMediationCase);
+                sendMediationCaseClosedMessage(muSigMediationCase);
                 sendMediationCaseClosedTradeLogMessage(muSigMediationCase);
             }
         }
@@ -365,13 +365,10 @@ public class MuSigMediatorService extends RateLimitedPersistenceClient<MuSigMedi
 
         NetworkIdWithKeyPair networkIdWithKeyPair = myUserIdentity.getNetworkIdWithKeyPair();
 
-        MuSigMediationStateChangeMessage openMessage = new MuSigMediationStateChangeMessage(
+        MuSigMediationOpenedMessage openMessage = new MuSigMediationOpenedMessage(
                 StringUtils.createUid(),
                 tradeId,
-                myUserIdentity.getNetworkIdWithKeyPair().getNetworkId(),
-                MediationCaseState.OPEN,
-                Optional.empty(),
-                Optional.empty());
+                myUserIdentity.getNetworkIdWithKeyPair().getNetworkId());
 
         // Send to requester
         networkService.confidentialSend(openMessage,
@@ -549,19 +546,16 @@ public class MuSigMediatorService extends RateLimitedPersistenceClient<MuSigMedi
                 });
     }
 
-    private void sendMediationCaseStateChangeMessage(MuSigMediationCase muSigMediationCase) {
+    private void sendMediationCaseClosedMessage(MuSigMediationCase muSigMediationCase) {
         MuSigMediationRequest muSigMediationRequest = muSigMediationCase.getMuSigMediationRequest();
-        MediationCaseState mediationCaseState = muSigMediationCase.getMediationCaseState();
-        Optional<MuSigMediationResult> muSigMediationResult = muSigMediationCase.getMuSigMediationResult();
         findMyMediatorUserIdentity(muSigMediationRequest.getContract().getMediator())
                 .ifPresent(myUserIdentity -> {
                     String id = StringUtils.createUid();
-                    MuSigMediationStateChangeMessage message = new MuSigMediationStateChangeMessage(id,
+                    MuSigMediationClosedMessage message = new MuSigMediationClosedMessage(id,
                             muSigMediationRequest.getTradeId(),
                             myUserIdentity.getNetworkIdWithKeyPair().getNetworkId(),
-                            mediationCaseState,
-                            muSigMediationResult,
-                            muSigMediationCase.getMediationResultSignature());
+                            muSigMediationCase.getMuSigMediationResult().orElseThrow(),
+                            muSigMediationCase.getMediationResultSignature().orElseThrow());
                     NetworkIdWithKeyPair networkIdWithKeyPair = myUserIdentity.getNetworkIdWithKeyPair();
 
                     networkService.confidentialSend(message,
@@ -584,10 +578,10 @@ public class MuSigMediatorService extends RateLimitedPersistenceClient<MuSigMedi
                                 muSigMediationResult,
                                 myUserIdentity.getNetworkIdWithKeyPair().getKeyPair());
                     } catch (GeneralSecurityException e) {
-                        throw new IllegalStateException("Could not sign MuSigMediationStateChangeMessage for trade " + mediationRequest.getTradeId(), e);
+                        throw new IllegalStateException("Could not sign MuSigMediationResult for trade " + mediationRequest.getTradeId(), e);
                     }
                 })
-                .orElseThrow(() -> new IllegalStateException("Could not sign MuSigMediationStateChangeMessage because mediator identity was not found."));
+                .orElseThrow(() -> new IllegalStateException("Could not sign MuSigMediationResult because mediator identity was not found."));
     }
 
     private void leaveChannel(String tradeId) {

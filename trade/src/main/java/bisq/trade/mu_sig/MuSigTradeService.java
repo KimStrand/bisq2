@@ -53,9 +53,11 @@ import bisq.persistence.DbSubDirectory;
 import bisq.persistence.Persistence;
 import bisq.persistence.RateLimitedPersistenceClient;
 import bisq.settings.SettingsService;
-import bisq.support.arbitration.mu_sig.MuSigArbitrationStateChangeMessage;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationClosedMessage;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationOpenedMessage;
 import bisq.support.dispute.mu_sig.MuSigDisputeCasePaymentDetailsRequest;
-import bisq.support.mediation.mu_sig.MuSigMediationStateChangeMessage;
+import bisq.support.mediation.mu_sig.MuSigMediationClosedMessage;
+import bisq.support.mediation.mu_sig.MuSigMediationOpenedMessage;
 import bisq.trade.ServiceProvider;
 import bisq.trade.TradeRestrictedException;
 import bisq.trade.mu_sig.arbitration.MuSigTraderArbitrationService;
@@ -351,11 +353,15 @@ public final class MuSigTradeService extends RateLimitedPersistenceClient<MuSigT
             } else {
                 handleMuSigTradeMessage(muSigTradeMessage);
             }
-        } else if (envelopePayloadMessage instanceof MuSigMediationStateChangeMessage message) {
+        } else if (envelopePayloadMessage instanceof MuSigMediationOpenedMessage message) {
+            handleDisputeMessage(message.getTradeId(), message);
+        } else if (envelopePayloadMessage instanceof MuSigMediationClosedMessage message) {
             handleDisputeMessage(message.getTradeId(), message);
         } else if (envelopePayloadMessage instanceof MuSigDisputeCasePaymentDetailsRequest message) {
             handleDisputeMessage(message.getTradeId(), message);
-        } else if (envelopePayloadMessage instanceof MuSigArbitrationStateChangeMessage message) {
+        } else if (envelopePayloadMessage instanceof MuSigArbitrationOpenedMessage message) {
+            handleDisputeMessage(message.getTradeId(), message);
+        } else if (envelopePayloadMessage instanceof MuSigArbitrationClosedMessage message) {
             handleDisputeMessage(message.getTradeId(), message);
         }
     }

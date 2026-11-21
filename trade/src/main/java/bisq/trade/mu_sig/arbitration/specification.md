@@ -8,7 +8,7 @@ In scope:
 
 * selecting the arbitrator assigned to the trade
 * requesting arbitration after mediation
-* receiving arbitration state changes
+* receiving the arbitrator's opened and closed messages
 * responding to payment detail requests
 * receiving and verifying arbitration results
 
@@ -25,7 +25,9 @@ Out of scope:
 ### Terminology
 
 * `MuSigArbitrationRequest` is the message used by a trader to request arbitration.
-* `MuSigArbitrationStateChangeMessage` is the arbitrator message that informs traders about arbitration state changes.
+* `MuSigArbitrationOpenedMessage` is the arbitrator message that informs traders that arbitration is open.
+* `MuSigArbitrationClosedMessage` is the arbitrator message that informs traders that arbitration is closed. It
+  carries the arbitration result and the arbitrator's signature for it.
 * `MuSigArbitrationResult` is the arbitrator's final resolution for the trade.
 * `MuSigMediationResult` is the signed mediation result required to request arbitration.
 * `MuSigDisputeCasePaymentDetailsRequest` is the arbitrator request for trader payment details.
@@ -60,12 +62,12 @@ Rules:
 
 * A trader can request arbitration only from `MEDIATION_CLOSED`.
 * Requesting arbitration sets the local state to `ARBITRATION_REQUESTED`.
-* An arbitrator `OPEN` state change moves the trade to `ARBITRATION_OPEN`.
-* An arbitrator `CLOSED` state change moves the trade to `ARBITRATION_CLOSED` only from `ARBITRATION_OPEN`.
+* A `MuSigArbitrationOpenedMessage` moves the trade to `ARBITRATION_OPEN`.
+* A `MuSigArbitrationClosedMessage` moves the trade to `ARBITRATION_CLOSED` only from `ARBITRATION_OPEN`.
 * Arbitration messages that arrive before the trade and channel are available are kept pending and processed later.
 * Arbitration messages that arrive before the trade is in the required local state are kept pending and processed later.
-* A duplicate `OPEN` state change is ignored when the trade is already `ARBITRATION_OPEN`.
-* A duplicate `CLOSED` state change is ignored when the trade is already `ARBITRATION_CLOSED`.
+* A repeated `MuSigArbitrationOpenedMessage` is ignored when the trade is already `ARBITRATION_OPEN`.
+* A repeated `MuSigArbitrationClosedMessage` is ignored when the trade is already `ARBITRATION_CLOSED`.
 * An arbitration result cannot be changed once stored.
 * An arbitration result signature cannot be changed once stored.
 
@@ -122,7 +124,7 @@ Rules:
 
 ### Opening arbitration
 
-The arbitrator opens arbitration by sending an `OPEN` state change message.
+The arbitrator opens arbitration by sending a `MuSigArbitrationOpenedMessage`.
 
 Rules:
 
@@ -133,7 +135,7 @@ Rules:
 * Messages from other senders are ignored.
 * If the trader requested arbitration, `ARBITRATION_REQUESTED` becomes `ARBITRATION_OPEN`.
 * If the peer requested arbitration, `MEDIATION_CLOSED` becomes `ARBITRATION_OPEN`.
-* Duplicate `OPEN` messages are ignored.
+* A repeated `MuSigArbitrationOpenedMessage` is ignored.
 * The trade is persisted when the dispute state changes.
 * The trade channel is updated to use the arbitrator as dispute agent.
 * An arbitration-opened trade log message is added to the channel.
@@ -166,16 +168,15 @@ Rules for sending responses:
 
 ### Closing arbitration
 
-The arbitrator closes arbitration by sending a `CLOSED` state change message.
+The arbitrator closes arbitration by sending a `MuSigArbitrationClosedMessage`.
 
 Rules:
 
 * The current dispute state must be `ARBITRATION_OPEN`.
-* The message must contain an arbitration result.
-* The message must contain an arbitration result signature.
+* The message always contains an arbitration result and an arbitration result signature. A message without one of
+  them is refused when it is received and never reaches the trade.
 * The arbitration result contract hash must match the trade contract.
 * The arbitration result signature must verify against the arbitrator public key from the contract.
-* Messages without a result or signature are ignored.
 * Messages with an invalid result signature are ignored.
 * If no arbitration result is stored yet, the result and signature are stored.
 * If a different result or signature is received after one is already stored, the changed result or signature is ignored.
@@ -190,7 +191,7 @@ Rules:
 * An arbitration request belongs to exactly one `tradeId`.
 * A trader can request arbitration only after mediation has closed.
 * A signed mediation result must be available before arbitration can be requested.
-* Only the contract arbitrator can send arbitration state changes.
+* Only the contract arbitrator can open or close arbitration for a trade.
 * The arbitrator must not be banned.
 * Payment details are sent only after an explicit arbitrator request.
 * A stored arbitration result cannot be changed.

@@ -58,13 +58,19 @@ import bisq.security.keys.PubKey;
 import bisq.security.keys.TorKeyGeneration;
 import bisq.security.pow.ProofOfWork;
 import bisq.settings.SettingsService;
+import bisq.support.arbitration.ArbitrationPayoutDistributionType;
+import bisq.support.arbitration.ArbitrationResultReason;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationClosedMessage;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationOpenedMessage;
 import bisq.support.arbitration.mu_sig.MuSigArbitrationRequest;
-import bisq.support.mediation.MediationCaseState;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationResult;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationResultService;
 import bisq.support.mediation.MediationPayoutDistributionType;
 import bisq.support.mediation.MediationResultReason;
+import bisq.support.mediation.mu_sig.MuSigMediationClosedMessage;
+import bisq.support.mediation.mu_sig.MuSigMediationOpenedMessage;
 import bisq.support.mediation.mu_sig.MuSigMediationResult;
 import bisq.support.mediation.mu_sig.MuSigMediationResultService;
-import bisq.support.mediation.mu_sig.MuSigMediationStateChangeMessage;
 import bisq.trade.MuSigDisputeState;
 import bisq.trade.ServiceProvider;
 import bisq.trade.exceptions.TradeProtocolException;
@@ -267,7 +273,7 @@ class MuSigTradeServiceTest {
 
             // A repeated closing message changes nothing, but its handling has to wait for the trade's protocol.
             fixture.caller.submit(() -> fixture.service.onMessage(
-                    createMediationMessage(fixture.trade, MediationCaseState.CLOSED))).get(5, SECONDS);
+                    createMediationClosedMessage(fixture.trade))).get(5, SECONDS);
             awaitProtocolWaiters(fixture, 1);
 
             completeSigning(signing);
@@ -275,6 +281,60 @@ class MuSigTradeServiceTest {
             assertThat(fixture.trade.getTradeState()).isEqualTo(MuSigTradeState.CUSTOM_PAYOUT_SIGNED);
             assertThat(fixture.trade.getTradeDispute().getDisputeState())
                     .isEqualTo(MuSigDisputeState.MEDIATION_CLOSED);
+        }
+    }
+
+    @Test
+    void anOpenedMediationMessageOpensTheCaseOfTheTrade() throws Exception {
+        MuSigTrade trade = createMediatedTrade(true, MuSigTradeState.DEPOSIT_TX_CONFIRMED);
+        // The helper builds a closed case. An opened message reads only the state.
+        trade.getTradeDispute().setDisputeState(MuSigDisputeState.MEDIATION_REQUESTED);
+        try (MediationFixture fixture = new MediationFixture(trade, true)) {
+            fixture.addChannel();
+
+            fixture.service.onMessage(new MuSigMediationOpenedMessage("mediation-opened", trade.getId(),
+                    trade.getContract().getMediator().orElseThrow().getNetworkId()));
+            fixture.service.getExecutor().submit(() -> {}).get(5, SECONDS);
+
+            assertThat(trade.getTradeDispute().getDisputeState()).isEqualTo(MuSigDisputeState.MEDIATION_OPEN);
+        }
+    }
+
+    @Test
+    void anOpenedArbitrationMessageOpensTheCaseOfTheTrade() throws Exception {
+        UserProfile arbitrator = createUserProfile(createNetworkId("arbitrator", 9995), "arbitrator");
+        MuSigTrade trade = createMediatedTrade(true, MuSigTradeState.DEPOSIT_TX_CONFIRMED, Optional.of(arbitrator));
+        trade.getTradeDispute().setDisputeState(MuSigDisputeState.ARBITRATION_REQUESTED);
+        try (MediationFixture fixture = new MediationFixture(trade, true)) {
+            fixture.addChannel();
+
+            fixture.service.onMessage(new MuSigArbitrationOpenedMessage("arbitration-opened", trade.getId(),
+                    arbitrator.getNetworkId()));
+            fixture.service.getExecutor().submit(() -> {}).get(5, SECONDS);
+
+            assertThat(trade.getTradeDispute().getDisputeState()).isEqualTo(MuSigDisputeState.ARBITRATION_OPEN);
+        }
+    }
+
+    @Test
+    void aClosedArbitrationMessageClosesTheCaseOfTheTrade() throws Exception {
+        KeyPair arbitratorKeyPair = KeyGeneration.generateDefaultEcKeyPair();
+        UserProfile arbitrator = createUserProfile(createNetworkId("arbitrator", 9995, arbitratorKeyPair), "arbitrator");
+        MuSigTrade trade = createMediatedTrade(true, MuSigTradeState.DEPOSIT_TX_CONFIRMED, Optional.of(arbitrator));
+        trade.getTradeDispute().setDisputeState(MuSigDisputeState.ARBITRATION_OPEN);
+        MuSigArbitrationResult result = new MuSigArbitrationResult(ContractService.getContractHash(trade.getContract()),
+                ArbitrationResultReason.OTHER, ArbitrationPayoutDistributionType.CUSTOM_PAYOUT,
+                90_000L, 60_000L, Optional.empty());
+        try (MediationFixture fixture = new MediationFixture(trade, true)) {
+            fixture.addChannel();
+
+            fixture.service.onMessage(new MuSigArbitrationClosedMessage("arbitration-closed", trade.getId(),
+                    arbitrator.getNetworkId(), result,
+                    MuSigArbitrationResultService.signArbitrationResult(result, arbitratorKeyPair)));
+            fixture.service.getExecutor().submit(() -> {}).get(5, SECONDS);
+
+            assertThat(trade.getTradeDispute().getDisputeState()).isEqualTo(MuSigDisputeState.ARBITRATION_CLOSED);
+            assertThat(trade.getTradeDispute().getMuSigArbitrationResult()).contains(result);
         }
     }
 
@@ -429,7 +489,7 @@ class MuSigTradeServiceTest {
             fixture.addChannel();
             fixture.service.onMessage(createPsbtMessage(trade));
             fixture.service.onMessage(createRejectionMessage(trade));
-            fixture.service.onMessage(createMediationMessage(trade, MediationCaseState.CLOSED));
+            fixture.service.onMessage(createMediationClosedMessage(trade));
             assertThat(trade.getPeer().isMediationResultRejected()).isFalse();
 
             fixture.service.initialize().get(5, SECONDS);
@@ -489,7 +549,7 @@ class MuSigTradeServiceTest {
     @Test
     void channelCreationReplaysTheResultAndFinalizesAPendingPeerPsbt() throws Exception {
         MuSigTrade trade = createMediatedTrade(true, MuSigTradeState.CUSTOM_PAYOUT_SIGNED);
-        MuSigMediationStateChangeMessage result = createMediationMessage(trade, MediationCaseState.CLOSED);
+        MuSigMediationClosedMessage result = createMediationClosedMessage(trade);
         MuSigCustomPayoutPsbtMessage psbt = createPsbtMessage(trade);
         trade.getMyself().setMyCustomPayoutPsbt(new CustomPayoutPsbt(new byte[]{1, 2, 3}, CUSTOM_PAYOUT_TX_ID, 89_900, 59_900));
         bisq.trade.protobuf.Trade.Builder builder = trade.toProto(false).toBuilder();
@@ -599,7 +659,7 @@ class MuSigTradeServiceTest {
                     () -> fixture.service.rejectMediationResultAndRequestArbitration(fixture.trade),
                     () -> fixture.service.paymentInitiated(fixture.trade),
                     () -> fixture.service.onMessage(createPsbtMessage(fixture.trade)),
-                    () -> fixture.service.onMessage(createMediationMessage(fixture.trade, MediationCaseState.CLOSED)))) {
+                    () -> fixture.service.onMessage(createMediationClosedMessage(fixture.trade)))) {
                 assertThatThrownBy(action::run).isInstanceOf(RejectedExecutionException.class);
             }
         }
@@ -739,9 +799,12 @@ class MuSigTradeServiceTest {
     }
 
     private static NetworkId createNetworkId(String keyIdSuffix, int port) {
+        return createNetworkId(keyIdSuffix, port, KeyGeneration.generateDefaultEcKeyPair());
+    }
+
+    private static NetworkId createNetworkId(String keyIdSuffix, int port, KeyPair keyPair) {
         AddressByTransportTypeMap addresses = new AddressByTransportTypeMap(Map.of(
                 TransportType.CLEAR, new ClearnetAddress("127.0.0.1", port)));
-        KeyPair keyPair = KeyGeneration.generateDefaultEcKeyPair();
         return new NetworkId(addresses, new PubKey(keyPair.getPublic(), "test-key-" + keyIdSuffix));
     }
 
@@ -761,10 +824,11 @@ class MuSigTradeServiceTest {
         response.onCompleted();
     }
 
-    private static MuSigMediationStateChangeMessage createMediationMessage(MuSigTrade trade, MediationCaseState state) {
-        return new MuSigMediationStateChangeMessage("mediation-state", trade.getId(),
-                trade.getContract().getMediator().orElseThrow().getNetworkId(), state,
-                trade.getTradeDispute().getMuSigMediationResult(), trade.getTradeDispute().getMediationResultSignature());
+    private static MuSigMediationClosedMessage createMediationClosedMessage(MuSigTrade trade) {
+        return new MuSigMediationClosedMessage("mediation-state", trade.getId(),
+                trade.getContract().getMediator().orElseThrow().getNetworkId(),
+                trade.getTradeDispute().getMuSigMediationResult().orElseThrow(),
+                trade.getTradeDispute().getMediationResultSignature().orElseThrow());
     }
 
     private static MuSigCustomPayoutPsbtMessage createPsbtMessage(MuSigTrade trade) {

@@ -28,7 +28,9 @@ Out of scope:
 * `MuSigArbitrationCase` is the arbitrator-side persisted case for one trade.
 * `MuSigMediationResult` is the signed mediation result required to request escalation to arbitration.
 * `MuSigArbitrationResult` is the arbitrator's final resolution for the trade.
-* `MuSigArbitrationStateChangeMessage` informs traders about arbitration state changes.
+* `MuSigArbitrationOpenedMessage` informs traders that the arbitrator opened the case.
+* `MuSigArbitrationClosedMessage` informs traders that the arbitrator closed the case. It carries the arbitration
+  result and the arbitrator's signature for it.
 * `requester` is the trader who requested arbitration.
 * `peer` is the other trader in the trade.
 * `maker` and `taker` are the contract roles used for payment account payload hashes.
@@ -83,7 +85,7 @@ Rules:
 * Requests with an invalid mediation result or invalid mediation result signature are ignored.
 * A local arbitrator identity matching the contract arbitrator must exist.
 * A `MuSigArbitrationCase` is created and persisted.
-* An `OPEN` state change message is sent to requester and peer.
+* A `MuSigArbitrationOpenedMessage` is sent to requester and peer.
 * Arbitration-opened trade log messages are added for requester and peer.
 
 If the local arbitrator identity cannot be found, the request is ignored.
@@ -144,7 +146,7 @@ Rules:
 * The signed result is stored in the case.
 * The case state is set to `CLOSED`.
 * If the result, signature, or state changed, the case is persisted.
-* A state change message is sent to requester and peer.
+* A `MuSigArbitrationClosedMessage` with the result and its signature is sent to requester and peer.
 * A trade log message is sent to the trade channel.
 
 Immutability:

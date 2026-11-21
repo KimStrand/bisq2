@@ -46,7 +46,6 @@ CommonPublicChatMessageReaction,864000000,10000,1.0
 CooperativeClosureMessage_G,864000000,1000,0.2
 MuSigMediationRequest,864000000,1000,0.2
 MuSigMediationResultAcceptanceMessage,864000000,1000,0.2
-MuSigMediationStateChangeMessage,864000000,1000,0.2
 MuSigMediatorsResponse,864000000,1000,0.2
 MuSigOfferMessage,172800000,1000,0.12000000000000001
 MuSigOpenTradeMessage,864000000,100,0.11

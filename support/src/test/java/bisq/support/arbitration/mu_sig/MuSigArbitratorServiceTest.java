@@ -24,8 +24,14 @@ import bisq.account.payment_method.PaymentMethodSpec;
 import bisq.account.payment_method.PaymentMethodSpecUtil;
 import bisq.account.payment_method.fiat.FiatPaymentMethod;
 import bisq.account.payment_method.fiat.FiatPaymentRail;
+import bisq.bonded_roles.BondedRoleType;
+import bisq.bonded_roles.BondedRolesService;
+import bisq.bonded_roles.bonded_role.AuthorizedBondedRole;
+import bisq.bonded_roles.bonded_role.AuthorizedBondedRolesService;
 import bisq.chat.ChatMessageType;
+import bisq.chat.ChatService;
 import bisq.chat.mu_sig.open_trades.MuSigOpenTradeChannel;
+import bisq.chat.mu_sig.open_trades.MuSigOpenTradeChannelService;
 import bisq.chat.mu_sig.open_trades.MuSigOpenTradeMessage;
 import bisq.common.market.Market;
 import bisq.common.network.AddressByTransportTypeMap;
@@ -33,7 +39,10 @@ import bisq.common.network.TransportType;
 import bisq.common.network.clear_net_address_types.LocalHostAddressTypeFacade;
 import bisq.contract.ContractService;
 import bisq.contract.mu_sig.MuSigContract;
+import bisq.network.NetworkService;
 import bisq.network.identity.NetworkId;
+import bisq.network.identity.NetworkIdWithKeyPair;
+import bisq.network.p2p.message.EnvelopePayloadMessage;
 import bisq.offer.Direction;
 import bisq.offer.amount.spec.BaseSideFixedAmountSpec;
 import bisq.offer.mu_sig.MuSigOffer;
@@ -41,17 +50,34 @@ import bisq.offer.options.AccountOption;
 import bisq.offer.options.OfferOptionUtil;
 import bisq.offer.price.spec.MarketPriceSpec;
 import bisq.offer.price.spec.PriceSpec;
+import bisq.persistence.DbSubDirectory;
+import bisq.persistence.PersistableStore;
+import bisq.persistence.Persistence;
+import bisq.persistence.PersistenceClient;
+import bisq.persistence.PersistenceService;
 import bisq.security.keys.KeyGeneration;
 import bisq.security.keys.PubKey;
 import bisq.security.pow.ProofOfWork;
+import bisq.support.arbitration.ArbitrationCaseState;
+import bisq.support.arbitration.ArbitrationPayoutDistributionType;
+import bisq.support.arbitration.ArbitrationResultReason;
 import bisq.support.dispute.mu_sig.MuSigDisputeCasePaymentDetailsResponse;
 import bisq.support.mediation.MediationPayoutDistributionType;
 import bisq.support.mediation.MediationResultReason;
 import bisq.support.mediation.mu_sig.MuSigMediationResult;
+import bisq.support.mediation.mu_sig.MuSigMediationResultService;
+import bisq.user.UserService;
 import bisq.user.banned.BannedUserService;
+import bisq.user.identity.UserIdentity;
+import bisq.user.identity.UserIdentityService;
 import bisq.user.profile.UserProfile;
+import java.nio.file.Path;
+import java.security.GeneralSecurityException;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.security.KeyPair;
 import java.util.List;
@@ -61,7 +87,13 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class MuSigArbitratorServiceTest {
@@ -270,12 +302,141 @@ class MuSigArbitratorServiceTest {
         assertThat(verifiedCase).isEmpty();
     }
 
+    @Test
+    void anArbitrationRequestOpensTheCaseAndTellsBothTraders() throws Exception {
+        NetworkService networkService = mock(NetworkService.class);
+        when(networkService.confidentialSend(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        UserProfile requester = createUserProfile(3081);
+        UserProfile peer = createUserProfile(3082);
+        KeyPair arbitratorKeyPair = KeyGeneration.generateDefaultEcKeyPair();
+        UserProfile arbitrator = createUserProfile(3083, arbitratorKeyPair);
+        NetworkIdWithKeyPair networkIdentity = new NetworkIdWithKeyPair(arbitrator.getNetworkId(), arbitratorKeyPair);
+        MuSigArbitratorService service = createService(networkService, arbitrator, networkIdentity);
+        String tradeId = "trade-81";
+
+        service.onMessage(createArbitrationRequestAfterMediation(tradeId, requester, peer, arbitrator));
+
+        assertThat(service.getArbitrationCases()).singleElement().satisfies(arbitrationCase -> {
+            assertThat(arbitrationCase.getArbitrationCaseState()).isEqualTo(ArbitrationCaseState.OPEN);
+            assertThat(arbitrationCase.getMuSigArbitrationRequest().getTradeId()).isEqualTo(tradeId);
+        });
+        for (UserProfile trader : List.of(requester, peer)) {
+            verify(networkService).confidentialSend(argThat(message ->
+                            message instanceof MuSigArbitrationOpenedMessage opened &&
+                                    opened.getTradeId().equals(tradeId) &&
+                                    opened.getSenderNetworkId().equals(arbitrator.getNetworkId())),
+                    eq(trader.getNetworkId()),
+                    same(networkIdentity));
+        }
+        verifyNoMoreInteractions(networkService);
+    }
+
+    @Test
+    void closingACaseSendsTheSignedResultToBothTraders() throws Exception {
+        NetworkService networkService = mock(NetworkService.class);
+        when(networkService.confidentialSend(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        UserProfile requester = createUserProfile(3091);
+        UserProfile peer = createUserProfile(3092);
+        KeyPair arbitratorKeyPair = KeyGeneration.generateDefaultEcKeyPair();
+        UserProfile arbitrator = createUserProfile(3093, arbitratorKeyPair);
+        NetworkIdWithKeyPair networkIdentity = new NetworkIdWithKeyPair(arbitrator.getNetworkId(), arbitratorKeyPair);
+        MuSigArbitratorService service = createService(networkService, arbitrator, networkIdentity);
+        String tradeId = "trade-91";
+        MuSigArbitrationRequest request = createArbitrationRequestAfterMediation(tradeId, requester, peer, arbitrator);
+        service.onMessage(request);
+        MuSigArbitrationCase arbitrationCase = service.getArbitrationCases().stream().findAny().orElseThrow();
+        // The opened messages are not the subject here.
+        clearInvocations(networkService);
+        MuSigArbitrationResult result = MuSigArbitratorService.createMuSigArbitrationResult(request.getContract(),
+                ArbitrationResultReason.OTHER,
+                ArbitrationPayoutDistributionType.CUSTOM_PAYOUT,
+                90_000L,
+                60_000L,
+                Optional.empty());
+
+        service.closeArbitrationCase(arbitrationCase, result);
+
+        assertThat(arbitrationCase.getArbitrationCaseState()).isEqualTo(ArbitrationCaseState.CLOSED);
+        ArgumentCaptor<EnvelopePayloadMessage> sent = ArgumentCaptor.forClass(EnvelopePayloadMessage.class);
+        for (UserProfile trader : List.of(requester, peer)) {
+            verify(networkService).confidentialSend(sent.capture(), eq(trader.getNetworkId()), same(networkIdentity));
+        }
+        verifyNoMoreInteractions(networkService);
+        assertThat(sent.getAllValues()).hasSize(2);
+        for (EnvelopePayloadMessage message : sent.getAllValues()) {
+            assertThat(message).isInstanceOf(MuSigArbitrationClosedMessage.class);
+            MuSigArbitrationClosedMessage closed = (MuSigArbitrationClosedMessage) message;
+            assertThat(closed.getTradeId()).isEqualTo(tradeId);
+            assertThat(closed.getSenderNetworkId()).isEqualTo(arbitrator.getNetworkId());
+            assertThat(closed.getMuSigArbitrationResult()).isEqualTo(result);
+            // The check which a trader runs on a closed message.
+            assertThat(MuSigArbitrationResultService.verifyArbitrationResult(closed.getMuSigArbitrationResult(),
+                    closed.getArbitrationResultSignature(),
+                    request.getContract(),
+                    arbitrator.getPublicKey())).isTrue();
+        }
+    }
+
+    /** A service whose node holds the identity and the role of the arbitrator. */
+    private MuSigArbitratorService createService(NetworkService networkService,
+                                                 UserProfile arbitrator,
+                                                 NetworkIdWithKeyPair networkIdentity) {
+        PersistenceService persistenceService = mock(PersistenceService.class);
+        @SuppressWarnings("unchecked")
+        Persistence<MuSigArbitratorStore> persistence = mock(Persistence.class);
+        when(persistenceService.getOrCreatePersistence(any(PersistenceClient.class), any(DbSubDirectory.class), any(PersistableStore.class)))
+                .thenReturn(persistence);
+        when(persistence.persistAsync(any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(persistence.getStorePath()).thenReturn(Path.of("build/test/musig-arbitrator-service"));
+        ChatService chatService = mock(ChatService.class);
+        when(chatService.getMuSigOpenTradeChannelService()).thenReturn(mock(MuSigOpenTradeChannelService.class));
+        UserIdentity arbitratorIdentity = mock(UserIdentity.class);
+        when(arbitratorIdentity.getUserProfile()).thenReturn(arbitrator);
+        when(arbitratorIdentity.getNetworkIdWithKeyPair()).thenReturn(networkIdentity);
+        UserIdentityService userIdentityService = mock(UserIdentityService.class);
+        when(userIdentityService.findUserIdentity(arbitrator.getId())).thenReturn(Optional.of(arbitratorIdentity));
+        UserService userService = mock(UserService.class);
+        when(userService.getUserIdentityService()).thenReturn(userIdentityService);
+        when(userService.getBannedUserService()).thenReturn(bannedUserService);
+        AuthorizedBondedRole role = mock(AuthorizedBondedRole.class);
+        when(role.getBondedRoleType()).thenReturn(BondedRoleType.ARBITRATOR);
+        when(role.getProfileId()).thenReturn(arbitrator.getId());
+        AuthorizedBondedRolesService authorizedBondedRolesService = mock(AuthorizedBondedRolesService.class);
+        when(authorizedBondedRolesService.getAuthorizedBondedRoleStream(true)).thenAnswer(ignored -> Stream.of(role));
+        BondedRolesService bondedRolesService = mock(BondedRolesService.class);
+        when(bondedRolesService.getAuthorizedBondedRolesService()).thenReturn(authorizedBondedRolesService);
+        return new MuSigArbitratorService(persistenceService, networkService, chatService, userService, bondedRolesService);
+    }
+
+    /** A request as a trader sends it after mediation: the contract names the mediator who signed the result. */
+    private MuSigArbitrationRequest createArbitrationRequestAfterMediation(String tradeId,
+                                                                           UserProfile requester,
+                                                                           UserProfile peer,
+                                                                           UserProfile arbitrator) throws GeneralSecurityException {
+        KeyPair mediatorKeyPair = KeyGeneration.generateDefaultEcKeyPair();
+        UserProfile mediator = createUserProfile(3099, mediatorKeyPair);
+        MuSigContract contract = createContract(requester, peer, Optional.of(mediator), arbitrator, "offer-" + tradeId,
+                createNationalBankPayload("taker-" + tradeId, "DE" + tradeId.substring(tradeId.length() - 2) + "1"),
+                createNationalBankPayload("maker-" + tradeId, "DE" + tradeId.substring(tradeId.length() - 2) + "2"));
+        MuSigMediationResult mediationResult = createMediationResult(contract);
+        return new MuSigArbitrationRequest(
+                tradeId,
+                contract,
+                mediationResult,
+                MuSigMediationResultService.signMediationResult(mediationResult, mediatorKeyPair),
+                requester,
+                peer,
+                List.of(),
+                arbitrator.getNetworkId()
+        );
+    }
+
     private MuSigArbitrationRequest createArbitrationRequest(String tradeId,
                                                              UserProfile requester,
                                                              UserProfile peer,
                                                              UserProfile arbitrator,
                                                              List<MuSigOpenTradeMessage> chatMessages) {
-        MuSigContract contract = createContract(requester, peer, arbitrator, "offer-" + tradeId,
+        MuSigContract contract = createContract(requester, peer, Optional.empty(), arbitrator, "offer-" + tradeId,
                 createNationalBankPayload("taker-" + tradeId, "DE" + tradeId.substring(tradeId.length() - 2) + "1"),
                 createNationalBankPayload("maker-" + tradeId, "DE" + tradeId.substring(tradeId.length() - 2) + "2"));
         return new MuSigArbitrationRequest(
@@ -325,6 +486,7 @@ class MuSigArbitratorServiceTest {
 
     private MuSigContract createContract(UserProfile maker,
                                          UserProfile taker,
+                                         Optional<UserProfile> mediator,
                                          UserProfile arbitrator,
                                          String offerId,
                                          AccountPayload<?> takerPayloadForHash,
@@ -361,7 +523,7 @@ class MuSigArbitratorServiceTest {
                 3_500_000L,
                 quoteSidePaymentMethodSpec,
                 takerSaltedAccountPayloadHash,
-                Optional.empty(),
+                mediator,
                 Optional.of(arbitrator),
                 createPriceSpec(),
                 0
@@ -373,7 +535,10 @@ class MuSigArbitratorServiceTest {
     }
 
     private UserProfile createUserProfile(int port) {
-        KeyPair keyPair = KeyGeneration.generateDefaultEcKeyPair();
+        return createUserProfile(port, KeyGeneration.generateDefaultEcKeyPair());
+    }
+
+    private UserProfile createUserProfile(int port, KeyPair keyPair) {
         PubKey pubKey = new PubKey(keyPair.getPublic(), "key-" + port);
         AddressByTransportTypeMap addresses = new AddressByTransportTypeMap(
                 Map.of(TransportType.CLEAR, LocalHostAddressTypeFacade.toLocalHostAddress(port))

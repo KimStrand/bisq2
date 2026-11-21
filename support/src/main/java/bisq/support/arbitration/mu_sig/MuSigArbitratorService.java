@@ -189,7 +189,7 @@ public class MuSigArbitratorService extends RateLimitedPersistenceClient<MuSigAr
             boolean stateChanged = muSigArbitrationCase.setArbitrationCaseState(ArbitrationCaseState.CLOSED);
             if (resultChanged || stateChanged) {
                 persist();
-                sendArbitrationCaseStateChangeMessage(muSigArbitrationCase);
+                sendArbitrationCaseClosedMessage(muSigArbitrationCase);
                 sendArbitrationCaseStateChangeTradeLogMessage(muSigArbitrationCase);
             }
         }
@@ -362,13 +362,10 @@ public class MuSigArbitratorService extends RateLimitedPersistenceClient<MuSigAr
         addNewArbitrationCase(muSigArbitrationCase);
 
         NetworkIdWithKeyPair networkIdWithKeyPair = myUserIdentity.getNetworkIdWithKeyPair();
-        MuSigArbitrationStateChangeMessage openMessage = new MuSigArbitrationStateChangeMessage(
+        MuSigArbitrationOpenedMessage openMessage = new MuSigArbitrationOpenedMessage(
                 StringUtils.createUid(),
                 tradeId,
-                myUserIdentity.getNetworkIdWithKeyPair().getNetworkId(),
-                ArbitrationCaseState.OPEN,
-                Optional.empty(),
-                Optional.empty());
+                myUserIdentity.getNetworkIdWithKeyPair().getNetworkId());
 
         // Send to requester
         networkService.confidentialSend(openMessage, requester.getNetworkId(), networkIdWithKeyPair);
@@ -508,19 +505,16 @@ public class MuSigArbitratorService extends RateLimitedPersistenceClient<MuSigAr
                 issues);
     }
 
-    private void sendArbitrationCaseStateChangeMessage(MuSigArbitrationCase muSigArbitrationCase) {
+    private void sendArbitrationCaseClosedMessage(MuSigArbitrationCase muSigArbitrationCase) {
         MuSigArbitrationRequest muSigArbitrationRequest = muSigArbitrationCase.getMuSigArbitrationRequest();
-        ArbitrationCaseState arbitrationCaseState = muSigArbitrationCase.getArbitrationCaseState();
-        Optional<MuSigArbitrationResult> muSigArbitrationResult = muSigArbitrationCase.getMuSigArbitrationResult();
         findMyArbitratorUserIdentity(muSigArbitrationRequest.getContract().getArbitrator())
                 .ifPresent(myUserIdentity -> {
                     String id = StringUtils.createUid();
-                    MuSigArbitrationStateChangeMessage message = new MuSigArbitrationStateChangeMessage(id,
+                    MuSigArbitrationClosedMessage message = new MuSigArbitrationClosedMessage(id,
                             muSigArbitrationRequest.getTradeId(),
                             myUserIdentity.getNetworkIdWithKeyPair().getNetworkId(),
-                            arbitrationCaseState,
-                            muSigArbitrationResult,
-                            muSigArbitrationCase.getArbitrationResultSignature());
+                            muSigArbitrationCase.getMuSigArbitrationResult().orElseThrow(),
+                            muSigArbitrationCase.getArbitrationResultSignature().orElseThrow());
                     NetworkIdWithKeyPair networkIdWithKeyPair = myUserIdentity.getNetworkIdWithKeyPair();
 
                     networkService.confidentialSend(message,
@@ -554,10 +548,10 @@ public class MuSigArbitratorService extends RateLimitedPersistenceClient<MuSigAr
                                 muSigArbitrationResult,
                                 myUserIdentity.getNetworkIdWithKeyPair().getKeyPair());
                     } catch (GeneralSecurityException e) {
-                        throw new IllegalStateException("Could not sign MuSigArbitrationStateChangeMessage for trade " + arbitrationRequest.getTradeId(), e);
+                        throw new IllegalStateException("Could not sign MuSigArbitrationResult for trade " + arbitrationRequest.getTradeId(), e);
                     }
                 })
-                .orElseThrow(() -> new IllegalStateException("Could not sign MuSigArbitrationStateChangeMessage because arbitrator identity was not found."));
+                .orElseThrow(() -> new IllegalStateException("Could not sign MuSigArbitrationResult because arbitrator identity was not found."));
     }
 
     private record PaymentDetailsVerification(boolean takerAccountPayloadMatches,

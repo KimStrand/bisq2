@@ -31,9 +31,11 @@ import bisq.common.market.Market;
 import bisq.common.network.AddressByTransportTypeMap;
 import bisq.common.network.TransportType;
 import bisq.common.network.clear_net_address_types.LocalHostAddressTypeFacade;
+import bisq.contract.ContractService;
 import bisq.contract.mu_sig.MuSigContract;
 import bisq.identity.Identity;
 import bisq.network.identity.NetworkId;
+import bisq.network.p2p.message.EnvelopePayloadMessage;
 import bisq.offer.Direction;
 import bisq.offer.amount.spec.BaseSideFixedAmountSpec;
 import bisq.offer.mu_sig.MuSigOffer;
@@ -49,22 +51,30 @@ import bisq.security.keys.KeyBundle;
 import bisq.security.keys.PubKey;
 import bisq.security.keys.TorKeyGeneration;
 import bisq.security.pow.ProofOfWork;
-import bisq.support.arbitration.ArbitrationCaseState;
-import bisq.support.arbitration.mu_sig.MuSigArbitrationStateChangeMessage;
+import bisq.support.arbitration.ArbitrationPayoutDistributionType;
+import bisq.support.arbitration.ArbitrationResultReason;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationClosedMessage;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationOpenedMessage;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationResult;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationResultService;
 import bisq.support.dispute.mu_sig.MuSigDisputeCasePaymentDetailsRequest;
-import bisq.support.mediation.MediationCaseState;
 import bisq.support.mediation.MediationPayoutDistributionType;
 import bisq.support.mediation.MediationResultReason;
+import bisq.support.mediation.mu_sig.MuSigMediationClosedMessage;
+import bisq.support.mediation.mu_sig.MuSigMediationOpenedMessage;
 import bisq.support.mediation.mu_sig.MuSigMediationResult;
-import bisq.support.mediation.mu_sig.MuSigMediationStateChangeMessage;
+import bisq.support.mediation.mu_sig.MuSigMediationResultService;
 import bisq.trade.MuSigDisputeState;
 import bisq.trade.mu_sig.arbitration.MuSigTraderArbitrationService;
 import bisq.trade.mu_sig.mediation.MuSigTraderMediationService;
 import bisq.user.banned.BannedUserService;
 import bisq.user.identity.UserIdentity;
 import bisq.user.profile.UserProfile;
+import java.security.GeneralSecurityException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.security.KeyPair;
 import java.util.HashMap;
@@ -193,13 +203,10 @@ class MuSigTradeDisputeServiceTest {
         tradeById.put(fixture.tradeId(), fixture.trade());
         MuSigOpenTradeChannel channel = stubOpenTradeChannel(fixture);
 
-        MuSigMediationStateChangeMessage message = new MuSigMediationStateChangeMessage(
+        MuSigMediationOpenedMessage message = new MuSigMediationOpenedMessage(
                 "msg-8",
                 fixture.tradeId(),
-                fixture.mediator().orElseThrow().getNetworkId(),
-                MediationCaseState.OPEN,
-                Optional.empty(),
-                Optional.empty()
+                fixture.mediator().orElseThrow().getNetworkId()
         );
 
         service.onDisputeMessage(message);
@@ -219,18 +226,101 @@ class MuSigTradeDisputeServiceTest {
         tradeById.put(fixture.tradeId(), fixture.trade());
         stubOpenTradeChannel(fixture);
 
-        MuSigMediationStateChangeMessage message = new MuSigMediationStateChangeMessage(
+        MuSigMediationOpenedMessage message = new MuSigMediationOpenedMessage(
                 "msg-after-close",
                 fixture.tradeId(),
-                fixture.mediator().orElseThrow().getNetworkId(),
-                MediationCaseState.OPEN,
-                Optional.empty(),
-                Optional.empty()
+                fixture.mediator().orElseThrow().getNetworkId()
         );
 
         service.onDisputeMessage(message);
 
         assertThat(fixture.tradeDispute().getDisputeState()).isEqualTo(MuSigDisputeState.MEDIATION_CLOSED);
+        assertThat(persistCalls.get()).isZero();
+        verifyNoInteractions(muSigTraderMediationService);
+    }
+
+    @Test
+    void givenClosedMediationMessageWithInvalidSignature_whenOnDisputeMessage_thenStaysOpenAndStoresNoResult() {
+        TradeFixture fixture = createTradeFixture(MuSigDisputeState.MEDIATION_OPEN, true, false);
+        tradeById.put(fixture.tradeId(), fixture.trade());
+        stubOpenTradeChannel(fixture);
+
+        MuSigMediationClosedMessage message = new MuSigMediationClosedMessage(
+                "msg-invalid-close",
+                fixture.tradeId(),
+                fixture.mediator().orElseThrow().getNetworkId(),
+                createMediationResult(),
+                signatureBytes()
+        );
+
+        service.onDisputeMessage(message);
+
+        assertThat(fixture.tradeDispute().getDisputeState()).isEqualTo(MuSigDisputeState.MEDIATION_OPEN);
+        assertThat(fixture.tradeDispute().getMuSigMediationResult()).isEmpty();
+        assertThat(persistCalls.get()).isZero();
+        verifyNoInteractions(muSigTraderMediationService);
+    }
+
+    @Test
+    void givenAuthorizedClosedMediationMessage_whenOnDisputeMessage_thenTransitionsToMediationClosedAndStoresResult() throws Exception {
+        TradeFixture fixture = createTradeFixture(MuSigDisputeState.MEDIATION_OPEN, true, false);
+        tradeById.put(fixture.tradeId(), fixture.trade());
+        MuSigOpenTradeChannel channel = stubOpenTradeChannel(fixture);
+        MuSigMediationClosedMessage message = createSignedMediationClosedMessage(fixture,
+                fixture.mediator().orElseThrow().getNetworkId());
+
+        service.onDisputeMessage(message);
+
+        assertThat(fixture.tradeDispute().getDisputeState()).isEqualTo(MuSigDisputeState.MEDIATION_CLOSED);
+        assertThat(fixture.tradeDispute().getMuSigMediationResult()).contains(message.getMuSigMediationResult());
+        assertThat(fixture.tradeDispute().getMediationResultSignature().orElseThrow())
+                .isEqualTo(message.getMediationResultSignature());
+        assertThat(persistCalls.get()).isEqualTo(1);
+        verify(muSigTraderMediationService).applyMediationStateToChannel(
+                fixture.tradeId(),
+                MuSigDisputeState.MEDIATION_CLOSED,
+                MuSigDisputeState.MEDIATION_OPEN,
+                channel);
+    }
+
+    @ParameterizedTest(name = "closed={0}")
+    @ValueSource(booleans = {false, true})
+    void givenMediationMessageFromAnotherSender_whenOnDisputeMessage_thenKeepsStateAndDoesNotPersist(boolean closed) throws Exception {
+        MuSigDisputeState state = closed ? MuSigDisputeState.MEDIATION_OPEN : MuSigDisputeState.MEDIATION_REQUESTED;
+        TradeFixture fixture = createTradeFixture(state, true, false);
+        tradeById.put(fixture.tradeId(), fixture.trade());
+        stubOpenTradeChannel(fixture);
+        // The peer knows the trade ID. After the case is closed it also has the result which the mediator signed.
+        NetworkId sender = fixture.takerProfile().getNetworkId();
+        EnvelopePayloadMessage message = closed
+                ? createSignedMediationClosedMessage(fixture, sender)
+                : new MuSigMediationOpenedMessage("msg-other-sender", fixture.tradeId(), sender);
+
+        service.onDisputeMessage(message);
+
+        assertThat(fixture.tradeDispute().getDisputeState()).isEqualTo(state);
+        assertThat(fixture.tradeDispute().getMuSigMediationResult()).isEmpty();
+        assertThat(persistCalls.get()).isZero();
+        verifyNoInteractions(muSigTraderMediationService);
+    }
+
+    @ParameterizedTest(name = "closed={0}")
+    @ValueSource(booleans = {false, true})
+    void givenMediationMessageFromBannedMediator_whenOnDisputeMessage_thenKeepsStateAndDoesNotPersist(boolean closed) throws Exception {
+        MuSigDisputeState state = closed ? MuSigDisputeState.MEDIATION_OPEN : MuSigDisputeState.MEDIATION_REQUESTED;
+        TradeFixture fixture = createTradeFixture(state, true, false);
+        tradeById.put(fixture.tradeId(), fixture.trade());
+        stubOpenTradeChannel(fixture);
+        NetworkId mediator = fixture.mediator().orElseThrow().getNetworkId();
+        when(bannedUserService.isUserProfileBanned(mediator)).thenReturn(true);
+        EnvelopePayloadMessage message = closed
+                ? createSignedMediationClosedMessage(fixture, mediator)
+                : new MuSigMediationOpenedMessage("msg-banned-mediator", fixture.tradeId(), mediator);
+
+        service.onDisputeMessage(message);
+
+        assertThat(fixture.tradeDispute().getDisputeState()).isEqualTo(state);
+        assertThat(fixture.tradeDispute().getMuSigMediationResult()).isEmpty();
         assertThat(persistCalls.get()).isZero();
         verifyNoInteractions(muSigTraderMediationService);
     }
@@ -267,13 +357,10 @@ class MuSigTradeDisputeServiceTest {
         tradeById.put(fixture.tradeId(), fixture.trade());
         MuSigOpenTradeChannel channel = stubOpenTradeChannel(fixture);
 
-        MuSigArbitrationStateChangeMessage message = new MuSigArbitrationStateChangeMessage(
+        MuSigArbitrationOpenedMessage message = new MuSigArbitrationOpenedMessage(
                 "msg-11",
                 fixture.tradeId(),
-                fixture.arbitrator().orElseThrow().getNetworkId(),
-                ArbitrationCaseState.OPEN,
-                Optional.empty(),
-                Optional.empty()
+                fixture.arbitrator().orElseThrow().getNetworkId()
         );
 
         service.onDisputeMessage(message);
@@ -287,6 +374,97 @@ class MuSigTradeDisputeServiceTest {
                 channel);
     }
 
+    @Test
+    void givenClosedArbitrationMessageWithInvalidSignature_whenOnDisputeMessage_thenStaysOpenAndStoresNoResult() {
+        TradeFixture fixture = createTradeFixture(MuSigDisputeState.ARBITRATION_OPEN, true, true);
+        tradeById.put(fixture.tradeId(), fixture.trade());
+        stubOpenTradeChannel(fixture);
+
+        MuSigArbitrationClosedMessage message = new MuSigArbitrationClosedMessage(
+                "msg-invalid-close",
+                fixture.tradeId(),
+                fixture.arbitrator().orElseThrow().getNetworkId(),
+                new MuSigArbitrationResult(new byte[20],
+                        ArbitrationResultReason.OTHER,
+                        ArbitrationPayoutDistributionType.CUSTOM_PAYOUT,
+                        60_000L,
+                        40_000L,
+                        Optional.empty()),
+                signatureBytes()
+        );
+
+        service.onDisputeMessage(message);
+
+        assertThat(fixture.tradeDispute().getDisputeState()).isEqualTo(MuSigDisputeState.ARBITRATION_OPEN);
+        assertThat(fixture.tradeDispute().getMuSigArbitrationResult()).isEmpty();
+        assertThat(persistCalls.get()).isZero();
+        verifyNoInteractions(muSigTraderArbitrationService);
+    }
+
+    @Test
+    void givenAuthorizedClosedArbitrationMessage_whenOnDisputeMessage_thenTransitionsToArbitrationClosedAndStoresResult() throws Exception {
+        TradeFixture fixture = createTradeFixture(MuSigDisputeState.ARBITRATION_OPEN, true, true);
+        tradeById.put(fixture.tradeId(), fixture.trade());
+        MuSigOpenTradeChannel channel = stubOpenTradeChannel(fixture);
+        MuSigArbitrationClosedMessage message = createSignedArbitrationClosedMessage(fixture,
+                fixture.arbitrator().orElseThrow().getNetworkId());
+
+        service.onDisputeMessage(message);
+
+        assertThat(fixture.tradeDispute().getDisputeState()).isEqualTo(MuSigDisputeState.ARBITRATION_CLOSED);
+        assertThat(fixture.tradeDispute().getMuSigArbitrationResult()).contains(message.getMuSigArbitrationResult());
+        assertThat(fixture.tradeDispute().getArbitrationResultSignature().orElseThrow())
+                .isEqualTo(message.getArbitrationResultSignature());
+        assertThat(persistCalls.get()).isEqualTo(1);
+        verify(muSigTraderArbitrationService).applyArbitrationStateToChannel(
+                fixture.tradeId(),
+                MuSigDisputeState.ARBITRATION_CLOSED,
+                MuSigDisputeState.ARBITRATION_OPEN,
+                channel);
+    }
+
+    @ParameterizedTest(name = "closed={0}")
+    @ValueSource(booleans = {false, true})
+    void givenArbitrationMessageFromAnotherSender_whenOnDisputeMessage_thenKeepsStateAndDoesNotPersist(boolean closed) throws Exception {
+        MuSigDisputeState state = closed ? MuSigDisputeState.ARBITRATION_OPEN : MuSigDisputeState.ARBITRATION_REQUESTED;
+        TradeFixture fixture = createTradeFixture(state, true, true);
+        tradeById.put(fixture.tradeId(), fixture.trade());
+        stubOpenTradeChannel(fixture);
+        // The peer knows the trade ID. After the case is closed it also has the result which the arbitrator signed.
+        NetworkId sender = fixture.takerProfile().getNetworkId();
+        EnvelopePayloadMessage message = closed
+                ? createSignedArbitrationClosedMessage(fixture, sender)
+                : new MuSigArbitrationOpenedMessage("msg-other-sender", fixture.tradeId(), sender);
+
+        service.onDisputeMessage(message);
+
+        assertThat(fixture.tradeDispute().getDisputeState()).isEqualTo(state);
+        assertThat(fixture.tradeDispute().getMuSigArbitrationResult()).isEmpty();
+        assertThat(persistCalls.get()).isZero();
+        verifyNoInteractions(muSigTraderArbitrationService);
+    }
+
+    @ParameterizedTest(name = "closed={0}")
+    @ValueSource(booleans = {false, true})
+    void givenArbitrationMessageFromBannedArbitrator_whenOnDisputeMessage_thenKeepsStateAndDoesNotPersist(boolean closed) throws Exception {
+        MuSigDisputeState state = closed ? MuSigDisputeState.ARBITRATION_OPEN : MuSigDisputeState.ARBITRATION_REQUESTED;
+        TradeFixture fixture = createTradeFixture(state, true, true);
+        tradeById.put(fixture.tradeId(), fixture.trade());
+        stubOpenTradeChannel(fixture);
+        NetworkId arbitrator = fixture.arbitrator().orElseThrow().getNetworkId();
+        when(bannedUserService.isUserProfileBanned(arbitrator)).thenReturn(true);
+        EnvelopePayloadMessage message = closed
+                ? createSignedArbitrationClosedMessage(fixture, arbitrator)
+                : new MuSigArbitrationOpenedMessage("msg-banned-arbitrator", fixture.tradeId(), arbitrator);
+
+        service.onDisputeMessage(message);
+
+        assertThat(fixture.tradeDispute().getDisputeState()).isEqualTo(state);
+        assertThat(fixture.tradeDispute().getMuSigArbitrationResult()).isEmpty();
+        assertThat(persistCalls.get()).isZero();
+        verifyNoInteractions(muSigTraderArbitrationService);
+    }
+
     private TradeFixture createTradeFixture(MuSigDisputeState disputeState,
                                             boolean includeMediator,
                                             boolean includeArbitrator) {
@@ -295,8 +473,10 @@ class MuSigTradeDisputeServiceTest {
         int offset = 100 + index;
         UserProfile maker = createUserProfile(20_000 + offset);
         UserProfile taker = createUserProfile(21_000 + offset);
-        Optional<UserProfile> mediator = includeMediator ? Optional.of(createUserProfile(22_000 + offset)) : Optional.empty();
-        Optional<UserProfile> arbitrator = includeArbitrator ? Optional.of(createUserProfile(23_000 + offset)) : Optional.empty();
+        KeyPair mediatorKeyPair = KeyGeneration.generateDefaultEcKeyPair();
+        KeyPair arbitratorKeyPair = KeyGeneration.generateDefaultEcKeyPair();
+        Optional<UserProfile> mediator = includeMediator ? Optional.of(createUserProfile(22_000 + offset, mediatorKeyPair)) : Optional.empty();
+        Optional<UserProfile> arbitrator = includeArbitrator ? Optional.of(createUserProfile(23_000 + offset, arbitratorKeyPair)) : Optional.empty();
 
         AccountPayload<?> takerPayload = createNationalBankPayload("taker-" + index, "DE" + offset + "01");
         AccountPayload<?> makerPayload = createNationalBankPayload("maker-" + index, "DE" + offset + "02");
@@ -319,7 +499,8 @@ class MuSigTradeDisputeServiceTest {
         MuSigTradeParty takerParty = trade.getTaker();
         MuSigTradeParty makerParty = trade.getMaker();
 
-        return new TradeFixture(trade.getId(), trade, tradeDispute, contract, identity, myself, peer, takerParty, makerParty, maker, taker, mediator, arbitrator);
+        return new TradeFixture(trade.getId(), trade, tradeDispute, contract, identity, myself, peer, takerParty, makerParty, maker, taker,
+                mediator, arbitrator, mediatorKeyPair, arbitratorKeyPair);
     }
 
     private MuSigContract createContract(UserProfile maker,
@@ -374,7 +555,10 @@ class MuSigTradeDisputeServiceTest {
     }
 
     private UserProfile createUserProfile(int port) {
-        KeyPair keyPair = KeyGeneration.generateDefaultEcKeyPair();
+        return createUserProfile(port, KeyGeneration.generateDefaultEcKeyPair());
+    }
+
+    private UserProfile createUserProfile(int port, KeyPair keyPair) {
         PubKey pubKey = new PubKey(keyPair.getPublic(), "key-" + port);
         AddressByTransportTypeMap addresses = new AddressByTransportTypeMap(
                 Map.of(TransportType.CLEAR, LocalHostAddressTypeFacade.toLocalHostAddress(port))
@@ -444,6 +628,35 @@ class MuSigTradeDisputeServiceTest {
         return new byte[70];
     }
 
+    /** A closed message with a result which the trade's mediator signed. The sender can be another node. */
+    private MuSigMediationClosedMessage createSignedMediationClosedMessage(TradeFixture fixture,
+                                                                           NetworkId sender) throws GeneralSecurityException {
+        MuSigMediationResult result = new MuSigMediationResult(
+                ContractService.getContractHash(fixture.contract()),
+                MediationResultReason.OTHER,
+                MediationPayoutDistributionType.CUSTOM_PAYOUT,
+                Optional.of(90_000L),
+                Optional.of(60_000L),
+                Optional.empty(),
+                Optional.empty());
+        return new MuSigMediationClosedMessage("msg-close", fixture.tradeId(), sender, result,
+                MuSigMediationResultService.signMediationResult(result, fixture.mediatorKeyPair()));
+    }
+
+    /** A closed message with a result which the trade's arbitrator signed. The sender can be another node. */
+    private MuSigArbitrationClosedMessage createSignedArbitrationClosedMessage(TradeFixture fixture,
+                                                                               NetworkId sender) throws GeneralSecurityException {
+        MuSigArbitrationResult result = new MuSigArbitrationResult(
+                ContractService.getContractHash(fixture.contract()),
+                ArbitrationResultReason.OTHER,
+                ArbitrationPayoutDistributionType.CUSTOM_PAYOUT,
+                90_000L,
+                60_000L,
+                Optional.empty());
+        return new MuSigArbitrationClosedMessage("msg-close", fixture.tradeId(), sender, result,
+                MuSigArbitrationResultService.signArbitrationResult(result, fixture.arbitratorKeyPair()));
+    }
+
     private record TradeFixture(String tradeId,
                                 MuSigTrade trade,
                                 MuSigTradeDispute tradeDispute,
@@ -456,6 +669,8 @@ class MuSigTradeDisputeServiceTest {
                                 UserProfile makerProfile,
                                 UserProfile takerProfile,
                                 Optional<UserProfile> mediator,
-                                Optional<UserProfile> arbitrator) {
+                                Optional<UserProfile> arbitrator,
+                                KeyPair mediatorKeyPair,
+                                KeyPair arbitratorKeyPair) {
     }
 }

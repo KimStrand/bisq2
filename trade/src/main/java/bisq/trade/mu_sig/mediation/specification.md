@@ -11,7 +11,7 @@ In scope:
 
 * selecting the mediator assigned to the trade
 * requesting mediation
-* receiving mediation state changes
+* receiving the mediator's opened and closed messages
 * sending dispute case data
 * responding to payment detail requests
 * receiving, verifying, accepting, and rejecting mediation results
@@ -29,7 +29,9 @@ Out of scope:
 ### Terminology
 
 * `MuSigMediationRequest` is the message used by a trader to request mediation.
-* `MuSigMediationStateChangeMessage` is the mediator message that informs traders about mediation state changes.
+* `MuSigMediationOpenedMessage` is the mediator message that informs traders that mediation is open.
+* `MuSigMediationClosedMessage` is the mediator message that informs traders that mediation is closed. It carries
+  the mediation result and the mediator's signature for it.
 * `MuSigMediationResult` is the mediator's proposed resolution for the trade.
 * `MuSigCustomPayoutPsbtMessage` shares a trader's signed custom-payout PSBT with the peer and thereby communicates acceptance of the mediation result.
 * `MuSigMediationResultRejectionMessage` communicates rejection of a specific mediation result to the peer.
@@ -65,13 +67,13 @@ Rules:
 
 * A trader can request mediation only from `NO_DISPUTE`.
 * Requesting mediation sets the local state to `MEDIATION_REQUESTED`.
-* A mediator `OPEN` state change moves the trade to `MEDIATION_OPEN`.
-* A mediator `CLOSED` state change moves the trade to `MEDIATION_CLOSED` only from `MEDIATION_OPEN`.
-* A closed case stays closed: a mediator `OPEN` state change does not reopen it. Its result cannot change, and the
+* A `MuSigMediationOpenedMessage` moves the trade to `MEDIATION_OPEN`.
+* A `MuSigMediationClosedMessage` moves the trade to `MEDIATION_CLOSED` only from `MEDIATION_OPEN`.
+* A closed case stays closed: a `MuSigMediationOpenedMessage` does not reopen it. Its result cannot change, and the
   chat stays available after the case is closed, so reopening is not needed to continue the discussion.
 * Mediation messages that arrive before the trade and channel are available are kept pending and processed later.
 * Mediation messages that arrive before the trade is in the required local state are kept pending and processed later.
-* Mediation state changes are ignored once the trade is in arbitration.
+* Both messages of the mediator are ignored once the trade is in arbitration.
 * A mediation result cannot be changed once stored.
 * A mediation result signature cannot be changed once stored.
 
@@ -126,7 +128,7 @@ Rules:
 
 ### Opening mediation
 
-The mediator opens mediation by sending an `OPEN` state change message.
+The mediator opens mediation by sending a `MuSigMediationOpenedMessage`.
 
 Rules:
 
@@ -137,7 +139,7 @@ Rules:
 * Messages from other senders are ignored.
 * If the trader requested mediation, `MEDIATION_REQUESTED` becomes `MEDIATION_OPEN`.
 * If the peer requested mediation, `NO_DISPUTE` becomes `MEDIATION_OPEN`.
-* Duplicate `OPEN` messages are ignored.
+* A repeated `MuSigMediationOpenedMessage` is ignored.
 * The trade is persisted when the dispute state changes.
 * The trade channel is updated to use the mediator as dispute agent.
 * A mediation-opened trade log message is added to the channel.
@@ -146,7 +148,7 @@ Rules:
 
 ### Dispute case data
 
-The trader who did not request mediation sends `MuSigDisputeCaseDataMessage` after receiving the mediator's `OPEN` state change.
+The trader who did not request mediation sends `MuSigDisputeCaseDataMessage` after receiving the mediator's `MuSigMediationOpenedMessage`.
 
 Purpose:
 
@@ -191,16 +193,15 @@ Rules for sending responses:
 
 ### Closing mediation
 
-The mediator closes mediation by sending a `CLOSED` state change message.
+The mediator closes mediation by sending a `MuSigMediationClosedMessage`.
 
 Rules:
 
 * The current dispute state must be `MEDIATION_OPEN`.
-* The message must contain a mediation result.
-* The message must contain a mediation result signature.
+* The message always contains a mediation result and a mediation result signature. A message without one of them
+  is refused when it is received and never reaches the trade.
 * The mediation result contract hash must match the trade contract.
 * The mediation result signature must verify against the mediator public key from the contract.
-* Messages without a result or signature are ignored.
 * Messages with an invalid result signature are ignored.
 * If no mediation result is stored yet, the result and signature are stored.
 * If a different result or signature is received after one is already stored, the changed result or signature is ignored.
@@ -291,7 +292,7 @@ acceptance attempt without Java knowing whether the first call changed service-s
 
 * A mediation request belongs to exactly one `tradeId`.
 * A trader can request mediation only once from `NO_DISPUTE`.
-* Only the contract mediator can send mediation state changes.
+* Only the contract mediator can open or close mediation for a trade.
 * The mediator must not be banned.
 * The non-requesting peer sends dispute case data after mediation opens.
 * Payment details are sent only after an explicit mediator request.
@@ -304,4 +305,4 @@ acceptance attempt without Java knowing whether the first call changed service-s
 * A buffered rejection takes precedence over a buffered peer PSBT when both wait for the mediation result.
 * The current implementation must not be used to finalize a custom payout until the security-deposit mismatch and
   returned-payout validation gap are corrected.
-* Mediation state changes do not override arbitration state.
+* The mediator's messages do not override arbitration state.
