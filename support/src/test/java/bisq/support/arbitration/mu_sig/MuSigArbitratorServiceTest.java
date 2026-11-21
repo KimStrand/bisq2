@@ -118,6 +118,29 @@ class MuSigArbitratorServiceTest {
     }
 
     @Test
+    void verifyArbitrationRequestRejectsATraderWithTheArbitratorsKey() {
+        UserProfile requester = createUserProfile(3061);
+        UserProfile arbitrator = createUserProfile(3063);
+        // A made-up contract which names the arbitrator's profile as the peer.
+        MuSigArbitrationRequest request = createArbitrationRequest("trade-61", requester, arbitrator, arbitrator, List.of());
+
+        Optional<UserProfile> verifiedRequester = MuSigArbitratorService.verifyArbitrationRequest(request, bannedUserService);
+
+        assertThat(verifiedRequester).isEmpty();
+    }
+
+    @Test
+    void verifyArbitrationRequestRejectsTheSameProfileAsRequesterAndPeer() {
+        UserProfile requester = createUserProfile(3071);
+        UserProfile arbitrator = createUserProfile(3073);
+        MuSigArbitrationRequest request = createArbitrationRequest("trade-71", requester, requester, arbitrator, List.of());
+
+        Optional<UserProfile> verifiedRequester = MuSigArbitratorService.verifyArbitrationRequest(request, bannedUserService);
+
+        assertThat(verifiedRequester).isEmpty();
+    }
+
+    @Test
     void verifyArbitrationRequestRejectsEmbeddedChatMessageWithWrongTradeId() {
         UserProfile requester = createUserProfile(3021);
         UserProfile peer = createUserProfile(3022);

@@ -30,20 +30,34 @@ public final class MuSigDisputeContractIdentityChecks {
     private MuSigDisputeContractIdentityChecks() {
     }
 
+    // A party is identified by its key, so these checks compare IDs. The contract holds the network IDs from when the
+    // offer was published and taken; their addresses can have changed since then (identity-by-key.md, rule 1).
+    // A trade has two different parties, so a request which names one profile as requester and peer does not match.
     public static boolean hasMatchingContractParties(MuSigContract contract,
                                                      UserProfile requester,
                                                      UserProfile peer) {
-        return requester.getNetworkId().equals(contract.getMaker().getNetworkId()) &&
-                peer.getNetworkId().equals(contract.getTaker().getNetworkId()) ||
-                requester.getNetworkId().equals(contract.getTaker().getNetworkId()) &&
-                        peer.getNetworkId().equals(contract.getMaker().getNetworkId());
+        String requesterId = requester.getId();
+        String peerId = peer.getId();
+        if (requesterId.equals(peerId)) {
+            return false;
+        }
+        String makerId = contract.getMaker().getNetworkId().getId();
+        String takerId = contract.getTaker().getNetworkId().getId();
+        return requesterId.equals(makerId) && peerId.equals(takerId) ||
+                requesterId.equals(takerId) && peerId.equals(makerId);
+    }
+
+    // The requester supplies the unsigned contract, so it can name the dispute agent's profile as a trader. Chat
+    // messages of that profile would then pass as messages of a trader, although they claim to come from the agent.
+    public static boolean isDisputeAgentAParty(UserProfile requester, UserProfile peer, NetworkId receiver) {
+        String disputeAgentId = receiver.getId();
+        return requester.getId().equals(disputeAgentId) || peer.getId().equals(disputeAgentId);
     }
 
     public static boolean hasMatchingContractDisputeAgent(Optional<UserProfile> disputeAgent,
                                                           NetworkId receiver) {
         return disputeAgent
-                .map(UserProfile::getNetworkId)
-                .map(disputeAgentNetworkId -> disputeAgentNetworkId.equals(receiver))
+                .map(agent -> agent.getId().equals(receiver.getId()))
                 .orElse(false);
     }
 

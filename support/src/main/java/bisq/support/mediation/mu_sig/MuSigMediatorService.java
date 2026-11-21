@@ -71,6 +71,7 @@ import java.util.stream.Stream;
 
 import static bisq.support.dispute.mu_sig.MuSigDisputeContractIdentityChecks.hasMatchingContractDisputeAgent;
 import static bisq.support.dispute.mu_sig.MuSigDisputeContractIdentityChecks.hasMatchingContractParties;
+import static bisq.support.dispute.mu_sig.MuSigDisputeContractIdentityChecks.isDisputeAgentAParty;
 import static bisq.support.dispute.mu_sig.MuSigDisputeContractIdentityChecks.resolveSenderRole;
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -288,6 +289,11 @@ public class MuSigMediatorService extends RateLimitedPersistenceClient<MuSigMedi
         if (!hasMatchingContractDisputeAgent(contract.getMediator(), muSigMediationRequest.getReceiver())) {
             log.warn("Ignoring MuSigMediationRequest for trade {} because mediator does not match contract mediator.",
                     muSigMediationRequest.getTradeId());
+            return Optional.empty();
+        }
+        if (isDisputeAgentAParty(requester, peer, muSigMediationRequest.getReceiver())) {
+            log.warn("Ignoring MuSigMediationRequest for trade {} because a trader has the mediator's key.",
+                    StringUtils.sanitizeForLog(muSigMediationRequest.getTradeId()));
             return Optional.empty();
         }
         if (!hasValidChatMessages(muSigMediationRequest, requester, peer)) {

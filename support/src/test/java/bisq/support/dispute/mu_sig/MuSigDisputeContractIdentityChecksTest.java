@@ -83,6 +83,78 @@ class MuSigDisputeContractIdentityChecksTest {
     }
 
     @Test
+    void hasMatchingContractParties_returnsTrue_whenPartiesHaveOtherAddressesThanInTheContract() {
+        UserProfile maker = createMaker();
+        UserProfile taker = createTaker();
+        MuSigContract contract = createContract(maker, taker);
+        // Same keys, but both parties added a transport after the contract was created.
+        UserProfile movedMaker = withOtherAddresses(maker, 21_001);
+        UserProfile movedTaker = withOtherAddresses(taker, 21_002);
+        assertThat(movedMaker.getNetworkId()).isNotEqualTo(maker.getNetworkId());
+
+        assertThat(MuSigDisputeContractIdentityChecks.hasMatchingContractParties(contract, movedMaker, movedTaker))
+                .isTrue();
+        assertThat(MuSigDisputeContractIdentityChecks.hasMatchingContractParties(contract, movedTaker, movedMaker))
+                .isTrue();
+    }
+
+    @Test
+    void hasMatchingContractParties_returnsFalse_whenOnlyTheAddressesMatch() {
+        UserProfile maker = createMaker();
+        UserProfile taker = createTaker();
+        MuSigContract contract = createContract(maker, taker);
+        // Another key at the maker's address.
+        UserProfile impostor = createUserProfile(20_001);
+
+        boolean result = MuSigDisputeContractIdentityChecks.hasMatchingContractParties(contract, impostor, taker);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void hasMatchingContractParties_returnsFalse_whenRequesterAndPeerAreTheSameProfile() {
+        UserProfile trader = createMaker();
+        // A made-up contract which names one profile as maker and taker.
+        MuSigContract contract = createContract(trader, trader);
+
+        boolean result = MuSigDisputeContractIdentityChecks.hasMatchingContractParties(contract, trader, trader);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void isDisputeAgentAParty_returnsTrue_whenATraderHasTheAgentsKey() {
+        UserProfile trader = createMaker();
+        UserProfile disputeAgent = createDisputeAgent();
+        // By key: the requester's copy of the agent's profile can carry other addresses.
+        UserProfile agentAsTrader = withOtherAddresses(disputeAgent, 21_005);
+
+        assertThat(MuSigDisputeContractIdentityChecks.isDisputeAgentAParty(trader, agentAsTrader,
+                disputeAgent.getNetworkId())).isTrue();
+        assertThat(MuSigDisputeContractIdentityChecks.isDisputeAgentAParty(agentAsTrader, trader,
+                disputeAgent.getNetworkId())).isTrue();
+    }
+
+    @Test
+    void isDisputeAgentAParty_returnsFalse_whenNoTraderHasTheAgentsKey() {
+        boolean result = MuSigDisputeContractIdentityChecks.isDisputeAgentAParty(createMaker(), createTaker(),
+                createDisputeAgent().getNetworkId());
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void hasMatchingContractDisputeAgent_returnsTrue_whenReceiverHasOtherAddressesThanTheContractsAgent() {
+        UserProfile disputeAgent = createDisputeAgent();
+        UserProfile movedAgent = withOtherAddresses(disputeAgent, 21_004);
+
+        boolean result = MuSigDisputeContractIdentityChecks.hasMatchingContractDisputeAgent(Optional.of(disputeAgent),
+                movedAgent.getNetworkId());
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
     void hasMatchingContractDisputeAgent_returnsTrue_whenReceiverMatchesAgentNetworkId() {
         UserProfile disputeAgent = createDisputeAgent();
 
@@ -176,6 +248,16 @@ class MuSigDisputeContractIdentityChecksTest {
     private UserProfile createUserProfile(int port) {
         KeyPair keyPair = KeyGeneration.generateDefaultEcKeyPair();
         PubKey pubKey = new PubKey(keyPair.getPublic(), "key-" + port);
+        AddressByTransportTypeMap addresses = new AddressByTransportTypeMap(
+                Map.of(TransportType.CLEAR, LocalHostAddressTypeFacade.toLocalHostAddress(port))
+        );
+        NetworkId networkId = new NetworkId(addresses, pubKey);
+        ProofOfWork proofOfWork = new ProofOfWork(pubKey.getHash(), 0, null, 1.0, new byte[72], 0);
+        return new UserProfile(1, "nick-" + port, proofOfWork, 0, networkId, "", "", "1.0.0");
+    }
+
+    private UserProfile withOtherAddresses(UserProfile profile, int port) {
+        PubKey pubKey = profile.getNetworkId().getPubKey();
         AddressByTransportTypeMap addresses = new AddressByTransportTypeMap(
                 Map.of(TransportType.CLEAR, LocalHostAddressTypeFacade.toLocalHostAddress(port))
         );

@@ -42,7 +42,7 @@ A message is imported by its exact content, so both traders' versions of a messa
 
 ## Not covered
 
-Contract signatures of both traders and signed chat messages are not part of the request. Until they are, accepted contracts and forwarded messages are unauthenticated, the case view shows the contract as submitted, and a spammer can rotate profiles to open more cases. MuSig mediation has none of these checks.
+Contract signatures of both traders and signed chat messages are not part of the request. Until they are, accepted contracts and forwarded messages are unauthenticated, the case view shows the contract as submitted, and a spammer can rotate profiles to open more cases. MuSig mediation and arbitration apply only the checks which [Dispute agents of MuSig trades](mu-sig-dispute-agents.md) lists.
 
 The other trader sends no request when the mediator joins, so a differing contract shows only when both traders requested.
 

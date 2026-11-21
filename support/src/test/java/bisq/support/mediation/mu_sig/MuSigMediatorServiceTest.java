@@ -138,6 +138,29 @@ class MuSigMediatorServiceTest {
     }
 
     @Test
+    void verifyMediationRequestRejectsATraderWithTheMediatorsKey() {
+        UserProfile requester = createUserProfile(1061);
+        UserProfile mediator = createUserProfile(1063);
+        // A made-up contract which names the mediator's profile as the peer.
+        MuSigMediationRequest request = createMediationRequest("trade-61", requester, mediator, mediator, List.of());
+
+        Optional<UserProfile> verifiedRequester = MuSigMediatorService.verifyMediationRequest(request, bannedUserService);
+
+        assertThat(verifiedRequester).isEmpty();
+    }
+
+    @Test
+    void verifyMediationRequestRejectsTheSameProfileAsRequesterAndPeer() {
+        UserProfile requester = createUserProfile(1071);
+        UserProfile mediator = createUserProfile(1073);
+        MuSigMediationRequest request = createMediationRequest("trade-71", requester, requester, mediator, List.of());
+
+        Optional<UserProfile> verifiedRequester = MuSigMediatorService.verifyMediationRequest(request, bannedUserService);
+
+        assertThat(verifiedRequester).isEmpty();
+    }
+
+    @Test
     void muSigMediationRequestProvidesMediatorReceiverPublicKey() {
         UserProfile requester = createUserProfile(1051);
         UserProfile peer = createUserProfile(1052);
