@@ -21,7 +21,7 @@ user of a two-party chat, or the traders and dispute agents of a trade, without 
    the channel, whose channel ID is the channel ID of that trade ID (`BisqEasyOpenTradeChannel.createId`,
    `MuSigOpenTradeChannel.createId`) and whose sender is one of the two traders, because the mediator ignores a request
    with any other message (`BisqEasyMediationRequestService.requestMediation`,
-   `MuSigTraderMediationService.requestMediation`).
+   `MuSigTraderMediationService.requestMediation`, and `MediationRequestedEventHandler` of MuSig V2).
 7. The receiver is the receiver profile ID of the message or reaction. A message or reaction names its receiver twice:
    by the receiver profile ID and by the receiver network ID. The node decrypts it only with the key of the receiver
    network ID. A node ignores a received message or reaction whose receiver profile ID is not the ID of its receiver

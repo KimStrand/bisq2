@@ -20,6 +20,7 @@ package bisq.support.mediation.mu_sig;
 import bisq.common.proto.ProtoResolver;
 import bisq.common.proto.UnresolvableProtobufException;
 import bisq.common.proto.UnresolvableProtobufMessageException;
+import bisq.common.statemachine.Event;
 import bisq.common.validation.NetworkDataValidation;
 import bisq.network.identity.NetworkId;
 import bisq.network.p2p.message.ExternalNetworkMessage;
@@ -44,7 +45,8 @@ import static bisq.network.p2p.services.data.storage.MetaData.TTL_10_DAYS;
 @Getter
 @ToString
 @EqualsAndHashCode
-public final class MuSigMediationOpenedMessage implements MailboxMessage, ExternalNetworkMessage, SenderPublicKeyProvidingPayload {
+public final class MuSigMediationOpenedMessage implements MailboxMessage, ExternalNetworkMessage,
+        SenderPublicKeyProvidingPayload, Event {
     public static final MetaData META_DATA = new MetaData(TTL_10_DAYS, StoragePriority.HIGH, MuSigMediationOpenedMessage.class.getSimpleName());
     private final String id;
     private final String tradeId;

@@ -20,9 +20,29 @@ package bisq.trade.mu_sig.messages.network.handler;
 import bisq.common.market.Market;
 import bisq.trade.mu_sig.MuSigFeeRateProvider;
 import bisq.trade.mu_sig.MuSigTrade;
+import bisq.trade.mu_sig.messages.network.mu_sig_data.PubKeyShares;
+import bisq.trade.protobuf.NonceSharesRequest;
 import bisq.trade.protobuf.ReceiverAddressAndAmount;
+import com.google.protobuf.ByteString;
 
 public class NonceSharesRequestUtil {
+    public static NonceSharesRequest createRequest(String tradeId,
+                                                   long tradeAmount,
+                                                   PubKeyShares peerPubKeyShares) {
+        return NonceSharesRequest.newBuilder()
+                .setTradeId(tradeId)
+                .setBuyerOutputPeersPubKeyShare(ByteString.copyFrom(peerPubKeyShares.getBuyerOutputPubKeyShare()))
+                .setSellerOutputPeersPubKeyShare(ByteString.copyFrom(peerPubKeyShares.getSellerOutputPubKeyShare()))
+                .setPeersMultisigScriptKey(ByteString.copyFrom(peerPubKeyShares.getMultisigScriptKey()))
+                .setDepositTxFeeRate(getDepositTxFeeRate())
+                .setPreparedTxFeeRate(getPreparedTxFeeRate())
+                .setTradeAmount(tradeAmount)
+                .setBuyersSecurityDeposit(getBuyerSecurityDeposit())
+                .setSellersSecurityDeposit(getSellersSecurityDeposit())
+                .setTradeFeeReceiver(getTradeFeeReceiver())
+                .build();
+    }
+
     public static long getTradeAmount(MuSigTrade trade) {
         Market market = trade.getMarket();
         if (market.getBaseCurrencyCode().equals("BTC")) {
